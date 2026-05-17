@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    background:
+      radial-gradient(1200px 600px at 50% -200px, rgba(91, 140, 255, 0.18), transparent 60%),
+      radial-gradient(900px 500px at 90% 10%, rgba(155, 91, 255, 0.12), transparent 60%),
+      #070914;
+    background-attachment: fixed;
+  }
+  ::selection {
+    background-color: rgba(91, 140, 255, 0.35);
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-bg-card/80 border border-bg-border rounded-2xl backdrop-blur-sm;
+  }
+  .card-hover {
+    @apply transition hover:border-accent-blue/50 hover:shadow-glow;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-primary {
+    @apply btn bg-gradient-to-br from-accent-blue to-accent-violet text-white shadow-glow hover:brightness-110;
+  }
+  .btn-ghost {
+    @apply btn border border-bg-border text-slate-200 hover:border-accent-blue/60 hover:text-white;
+  }
+  .btn-soft {
+    @apply btn bg-bg-border/60 text-slate-200 hover:bg-bg-border;
+  }
+  .badge {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium border;
+  }
+  .pill-input {
+    @apply w-full bg-bg-panel border border-bg-border rounded-xl px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-accent-blue/60 focus:ring-2 focus:ring-accent-blue/20;
+  }
+  .section-title {
+    @apply text-xs uppercase tracking-[0.18em] text-slate-400 font-semibold;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #1f2347;
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #2c3266;
+}
