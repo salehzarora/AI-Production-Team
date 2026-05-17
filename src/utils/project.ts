@@ -13,6 +13,7 @@ import type {
   SceneOutput,
   ScriptOutput,
   StoryboardOutput,
+  TargetTool,
   VideoDuration,
   VideoStyle,
   WorkflowStep,
@@ -24,6 +25,7 @@ export function createProject(input: {
   platform: Platform;
   style: VideoStyle;
   duration: VideoDuration;
+  targetTool: TargetTool;
 }): ProductionProject {
   const now = new Date().toISOString();
   const steps: WorkflowStep[] = AGENT_PIPELINE.map((agentId) => ({
@@ -42,6 +44,7 @@ export function createProject(input: {
     platform: input.platform,
     style: input.style,
     duration: input.duration,
+    targetTool: input.targetTool,
     createdAt: now,
     updatedAt: now,
     currentStep: 0,

@@ -13,6 +13,24 @@ export type VideoStyle =
 
 export type VideoDuration = 15 | 30 | 60;
 
+/**
+ * The target AI video tool the prompts are optimized for.
+ * - 'general' = generic / tool-agnostic prompts (legacy behavior)
+ * - 'vidu'    = optimized for Vidu's multi-reference image-to-video pipeline
+ * - 'runway'  = Runway Gen-3/Alpha style
+ * - 'kling'   = Kling-style
+ * - 'pika'    = Pika-style
+ */
+export type TargetTool = 'general' | 'vidu' | 'runway' | 'kling' | 'pika';
+
+export const TARGET_TOOL_LABELS: Record<TargetTool, string> = {
+  general: 'General AI Video',
+  vidu: 'Vidu',
+  runway: 'Runway',
+  kling: 'Kling',
+  pika: 'Pika',
+};
+
 export type AgentId =
   | 'script'
   | 'character'
@@ -92,6 +110,13 @@ export interface PromptShot {
   motionDescription: string;
   cameraMovement: string;
   consistencyReferences: string[];
+  // ---- Vidu Mode (optional, populated when targetTool === 'vidu') ----
+  motionPrompt?: string;
+  characterConsistency?: string;
+  sceneContinuity?: string;
+  negativePrompt?: string;
+  multiReferenceInstructions?: string;
+  suggestedReferenceImages?: string[];
 }
 
 export interface PromptOutput {
@@ -156,6 +181,8 @@ export interface ProductionProject {
   platform: Platform;
   style: VideoStyle;
   duration: VideoDuration;
+  /** Target AI video tool. Optional for backward compat with old saved projects. */
+  targetTool?: TargetTool;
   createdAt: string;
   updatedAt: string;
   /** Index in the AGENT_PIPELINE order. -1 means not started. */

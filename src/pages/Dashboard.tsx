@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { PlusCircle, Trash2, ArrowRight, Sparkles } from 'lucide-react';
 import { useProjects } from '../hooks/useProjects';
 import { progressPct } from '../utils/project';
+import { TARGET_TOOL_LABELS } from '../types';
 
 export default function Dashboard() {
   const { projects, remove } = useProjects();
@@ -48,6 +49,17 @@ export default function Dashboard() {
                       <div className="font-semibold text-white truncate">{p.title}</div>
                       <div className="text-xs text-slate-400 mt-0.5">
                         {p.platform} · {p.style} · {p.duration}s
+                      </div>
+                      <div className="mt-2">
+                        <span
+                          className={`badge ${
+                            (p.targetTool ?? 'general') === 'vidu'
+                              ? 'border-accent-violet/40 text-accent-violet bg-accent-violet/10'
+                              : 'border-bg-border text-slate-400 bg-bg-panel/50'
+                          }`}
+                        >
+                          {TARGET_TOOL_LABELS[p.targetTool ?? 'general']}
+                        </span>
                       </div>
                     </div>
                     <button

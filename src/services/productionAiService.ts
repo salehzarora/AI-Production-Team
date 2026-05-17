@@ -40,6 +40,7 @@ import type {
   PreviousOutputs,
   ProductionProject,
   PromptOutput,
+  PromptShot,
   SceneOutput,
   ScriptOutput,
   StoryboardOutput,
@@ -209,22 +210,211 @@ function buildPrompts(
   scenes: SceneOutput | undefined
 ): PromptOutput {
   const shots = storyboard?.shots ?? [];
-  const heroRef = characters?.characters[0]?.referencePrompt ?? '';
+  const hero = characters?.characters[0];
+  const sidekick = characters?.characters[1];
+  const heroRef = hero?.referencePrompt ?? '';
+  const heroPalette = (hero?.colors ?? []).join(', ');
   const envPrompt = scenes?.environmentPrompt ?? '';
+  const mainLocation = scenes?.locations[0] ?? 'primary location';
+  const lighting = scenes?.lighting ?? 'soft cinematic key light';
+  const mood = scenes?.mood ?? 'warm and inviting';
+  const styleTag = project.style;
+  const targetTool = project.targetTool ?? 'general';
+  const isVidu = targetTool === 'vidu';
+
   return {
-    shots: shots.map((s) => ({
-      shotNumber: s.shotNumber,
-      imagePrompt: `${project.style}, ${s.cameraAngle.toLowerCase()}, hero performing: ${s.action}. ${envPrompt}. Consistent character: ${heroRef}. 9:16, cinematic lighting, sharp focus, high detail --ar 9:16 --v 6`,
-      videoPrompt: `${project.style}, ${s.cameraAngle.toLowerCase()}, ${s.action} ${s.characterEmotion} expression. Camera: ${s.shotNumber === 1 ? 'slow push-in' : 'smooth dolly forward'}. Duration ${s.duration}.`,
-      motionDescription: `Subject moves naturally, secondary motion in hair/cloth. Background parallax. End on a held expression for clean cut.`,
-      cameraMovement: s.shotNumber === 1 ? 'Slow push-in' : s.shotNumber === shots.length ? 'Hold + slight zoom out' : 'Smooth dolly / tracking',
-      consistencyReferences: [
-        'Use character reference sheet from Character Agent',
-        'Use environment prompt from Scene Agent',
-        `Keep palette: ${(characters?.characters[0]?.colors ?? []).join(', ')}`,
-      ],
-    })),
+    shots: shots.map((s, idx) => {
+      const camMovement =
+        idx === 0
+          ? 'Slow cinematic push-in (15% over the shot)'
+          : idx === shots.length - 1
+            ? 'Hold + slight 5% pull-back, final beat'
+            : `Smooth ${idx % 2 === 0 ? 'dolly forward' : 'tracking lateral'} (20% travel)`;
+
+      // ---------- base / general fields (always generated) ----------
+      const imagePrompt = isVidu
+        ? buildViduImagePrompt(s, styleTag, heroRef, envPrompt, lighting, mood, heroPalette)
+        : `${styleTag}, ${s.cameraAngle.toLowerCase()}, hero performing: ${s.action}. ${envPrompt}. Consistent character: ${heroRef}. 9:16, cinematic lighting, sharp focus, high detail --ar 9:16 --v 6`;
+
+      const videoPrompt = isVidu
+        ? buildViduVideoPrompt(s, styleTag, mainLocation, camMovement, mood)
+        : `${styleTag}, ${s.cameraAngle.toLowerCase()}, ${s.action} ${s.characterEmotion} expression. Camera: ${camMovement.toLowerCase()}. Duration ${s.duration}.`;
+
+      const base: PromptShot = {
+        shotNumber: s.shotNumber,
+        imagePrompt,
+        videoPrompt,
+        motionDescription: `Subject moves naturally, secondary motion in hair/cloth/props. Background parallax suggests depth. End on a held expression for clean cut.`,
+        cameraMovement: camMovement,
+        consistencyReferences: [
+          'Character reference sheet from Character Agent',
+          'Environment prompt from Scene Agent',
+          heroPalette ? `Keep palette: ${heroPalette}` : 'Maintain consistent palette',
+        ],
+      };
+
+      // ---------- Vidu-specific fields ----------
+      if (isVidu) {
+        base.motionPrompt = buildViduMotionPrompt(s, mood);
+        base.characterConsistency = buildCharacterConsistency(hero?.name ?? 'Hero', heroPalette, heroRef, sidekick?.name);
+        base.sceneContinuity = buildSceneContinuity(mainLocation, lighting, idx, shots.length);
+        base.negativePrompt = buildViduNegativePrompt(styleTag);
+        base.multiReferenceInstructions = buildMultiRefInstructions(idx);
+        base.suggestedReferenceImages = buildSuggestedRefs(hero?.name ?? 'Hero', mainLocation, styleTag, idx === 0);
+      }
+
+      return base;
+    }),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Vidu-specific prompt builders
+// ---------------------------------------------------------------------------
+// Vidu is a multi-reference image-to-video model. Best results come from:
+//   - a strong, descriptive first-frame image prompt
+//   - a video prompt that describes ACTION and CAMERA in short, concrete clauses
+//   - a separate motion prompt isolating subject + secondary motion
+//   - explicit character + scene consistency notes
+//   - a negative prompt that strips realism / artifacts
+//   - multi-reference image inputs (character sheet + env + style)
+// ---------------------------------------------------------------------------
+
+function buildViduImagePrompt(
+  s: { cameraAngle: string; action: string; characterEmotion: string; visualNotes: string },
+  styleTag: string,
+  heroRef: string,
+  envPrompt: string,
+  lighting: string,
+  mood: string,
+  palette: string
+): string {
+  return [
+    `${styleTag}, ${s.cameraAngle.toLowerCase()}`,
+    `subject: hero ${s.characterEmotion}, ${s.action.toLowerCase()}`,
+    `environment: ${envPrompt}`,
+    `lighting: ${lighting}`,
+    `mood: ${mood}`,
+    palette ? `palette: ${palette}` : '',
+    `reference: ${heroRef}`,
+    s.visualNotes,
+    `9:16 vertical framing, sharp focus, high detail, clean composition`,
+  ]
+    .filter(Boolean)
+    .join('. ');
+}
+
+function buildViduVideoPrompt(
+  s: { cameraAngle: string; action: string; characterEmotion: string; duration: string },
+  styleTag: string,
+  location: string,
+  camMovement: string,
+  mood: string
+): string {
+  return [
+    `${styleTag} animation`,
+    `${s.cameraAngle.toLowerCase()} in ${location}`,
+    `hero ${s.action.toLowerCase()} with ${s.characterEmotion} expression`,
+    `camera: ${camMovement.toLowerCase()}`,
+    `mood: ${mood}`,
+    `duration ${s.duration}, smooth 24fps motion, no flicker`,
+  ].join('. ');
+}
+
+function buildViduMotionPrompt(
+  s: { action: string; characterEmotion: string },
+  mood: string
+): string {
+  return [
+    `Primary motion: hero ${s.action.toLowerCase()}.`,
+    `Secondary motion: subtle hair/cloth physics, breathing, micro-blinks.`,
+    `Background: gentle parallax + ambient particle drift to enhance ${mood} mood.`,
+    `Emotion arc: settles into ${s.characterEmotion} by mid-shot, holds through end.`,
+    `Avoid: sudden teleporting, limb morphing, abrupt cuts mid-shot.`,
+  ].join(' ');
+}
+
+function buildCharacterConsistency(
+  heroName: string,
+  palette: string,
+  heroRef: string,
+  sidekickName?: string
+): string {
+  const parts = [
+    `${heroName} must match the reference sheet exactly: same proportions, same outfit, same hair.`,
+    palette ? `Lock palette to: ${palette}.` : '',
+    `Inject the reference image (${heroRef}) into Vidu's first reference slot.`,
+    sidekickName
+      ? `If ${sidekickName} appears, use their reference sheet in slot 2 — do not blend features with ${heroName}.`
+      : '',
+    `Re-use the SAME seed across shots for cross-shot identity stability.`,
+  ];
+  return parts.filter(Boolean).join(' ');
+}
+
+function buildSceneContinuity(
+  location: string,
+  lighting: string,
+  idx: number,
+  total: number
+): string {
+  const transition =
+    idx === 0
+      ? 'Establishing shot — sets the world.'
+      : idx === total - 1
+        ? 'Final shot — close the loop back to the opening framing.'
+        : `Mid-shot ${idx + 1} of ${total} — continue from the previous shot without breaking lighting direction.`;
+  return [
+    `Location: ${location}.`,
+    `Lighting direction: ${lighting}.`,
+    transition,
+    `Re-use the environment reference image so background details (signage, props, sky color) stay identical to neighboring shots.`,
+  ].join(' ');
+}
+
+function buildViduNegativePrompt(styleTag: string): string {
+  return [
+    'photorealistic faces (unless style requires)',
+    'extra fingers',
+    'extra limbs',
+    'deformed hands',
+    'distorted face',
+    'mismatched eyes',
+    'morphing identity',
+    'flickering',
+    'watermark',
+    'text artifacts',
+    'low resolution',
+    'motion blur on subject face',
+    `style drift away from ${styleTag}`,
+  ].join(', ');
+}
+
+function buildMultiRefInstructions(idx: number): string {
+  return [
+    `Upload up to 7 reference images into Vidu's multi-reference slots:`,
+    `1) Character reference sheet (hero) — locks identity.`,
+    `2) Sidekick reference sheet (if present) — keeps secondary character on-model.`,
+    `3) Environment / location plate — locks the world.`,
+    `4) Style swatch (color palette + lighting sample) — locks look.`,
+    `5) Previous shot's last frame${idx === 0 ? ' (skip for shot 1)' : ' — for continuity'}.`,
+    `Set "Subject Reference" mode and weight character ref highest.`,
+  ].join(' ');
+}
+
+function buildSuggestedRefs(
+  heroName: string,
+  location: string,
+  styleTag: string,
+  isFirstShot: boolean
+): string[] {
+  const refs = [
+    `${heroName} character sheet (front + 3/4 + back)`,
+    `${location} environment plate (wide establishing)`,
+    `${styleTag} style swatch (palette + lighting)`,
+  ];
+  if (!isFirstShot) refs.push('Last frame of previous shot');
+  return refs;
 }
 
 function buildConsistency(

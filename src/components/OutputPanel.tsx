@@ -24,14 +24,14 @@ function Section({
   children,
   copyText,
 }: {
-  title: string;
+  title: ReactNode;
   children: ReactNode;
   copyText?: string;
 }) {
   return (
     <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <div className="section-title">{title}</div>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="section-title flex items-center gap-2">{title}</div>
         {copyText !== undefined && <CopyButton text={copyText} variant="soft" />}
       </div>
       <div className="text-sm text-slate-200 leading-relaxed">{children}</div>
@@ -253,33 +253,158 @@ function StoryboardView({ o }: { o: StoryboardOutput }) {
   );
 }
 
+type BadgeKind = 'Image' | 'Video' | 'Motion' | 'Camera' | 'Negative' | 'Character' | 'Scene' | 'Refs';
+
+const BADGE_STYLES: Record<BadgeKind, string> = {
+  Image: 'border-accent-blue/40 text-accent-blue bg-accent-blue/10',
+  Video: 'border-accent-violet/40 text-accent-violet bg-accent-violet/10',
+  Motion: 'border-accent-cyan/40 text-accent-cyan bg-accent-cyan/10',
+  Camera: 'border-accent-lime/40 text-accent-lime bg-accent-lime/10',
+  Negative: 'border-accent-pink/40 text-accent-pink bg-accent-pink/10',
+  Character: 'border-accent-gold/40 text-accent-gold bg-accent-gold/10',
+  Scene: 'border-accent-cyan/40 text-accent-cyan bg-accent-cyan/10',
+  Refs: 'border-bg-border text-slate-300 bg-bg-panel/50',
+};
+
+function TypeBadge({ kind }: { kind: BadgeKind }) {
+  return <span className={`badge ${BADGE_STYLES[kind]}`}>{kind}</span>;
+}
+
 function PromptView({ o }: { o: PromptOutput }) {
   return (
     <div className="space-y-4">
-      {o.shots.map((s) => (
-        <div key={s.shotNumber} className="card p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="font-semibold text-white">Shot {s.shotNumber}</div>
-            <span className="badge border-bg-border text-slate-400">{s.cameraMovement}</span>
+      {o.shots.map((s) => {
+        const isVidu = !!s.motionPrompt || !!s.negativePrompt || !!s.characterConsistency;
+        const fullShotText = buildFullShotText(s);
+        return (
+          <div key={s.shotNumber} className="card p-4 space-y-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="font-semibold text-white">Shot {s.shotNumber}</div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="badge border-bg-border text-slate-400">{s.cameraMovement}</span>
+                {isVidu && (
+                  <span className="badge border-accent-violet/50 text-accent-violet bg-accent-violet/10">
+                    Vidu
+                  </span>
+                )}
+                <CopyButton text={fullShotText} label="Copy full shot" variant="soft" />
+              </div>
+            </div>
+
+            <Section
+              title={<><TypeBadge kind="Image" /> Image prompt</>}
+              copyText={s.imagePrompt}
+            >
+              <code className="block bg-bg-panel/60 border border-bg-border rounded-lg p-3 font-mono text-xs whitespace-pre-wrap">
+                {s.imagePrompt}
+              </code>
+            </Section>
+
+            <Section
+              title={<><TypeBadge kind="Video" /> Video prompt</>}
+              copyText={s.videoPrompt}
+            >
+              <code className="block bg-bg-panel/60 border border-bg-border rounded-lg p-3 font-mono text-xs whitespace-pre-wrap">
+                {s.videoPrompt}
+              </code>
+            </Section>
+
+            {s.motionPrompt && (
+              <Section
+                title={<><TypeBadge kind="Motion" /> Motion prompt</>}
+                copyText={s.motionPrompt}
+              >
+                <code className="block bg-bg-panel/60 border border-bg-border rounded-lg p-3 font-mono text-xs whitespace-pre-wrap">
+                  {s.motionPrompt}
+                </code>
+              </Section>
+            )}
+
+            <Section
+              title={<><TypeBadge kind="Camera" /> Camera movement</>}
+              copyText={s.cameraMovement}
+            >
+              <p className="text-sm">{s.cameraMovement}</p>
+            </Section>
+
+            {s.negativePrompt && (
+              <Section
+                title={<><TypeBadge kind="Negative" /> Negative prompt</>}
+                copyText={s.negativePrompt}
+              >
+                <code className="block bg-bg-panel/60 border border-bg-border rounded-lg p-3 font-mono text-xs whitespace-pre-wrap">
+                  {s.negativePrompt}
+                </code>
+              </Section>
+            )}
+
+            {s.characterConsistency && (
+              <Section
+                title={<><TypeBadge kind="Character" /> Character consistency</>}
+                copyText={s.characterConsistency}
+              >
+                <p className="text-sm text-slate-200">{s.characterConsistency}</p>
+              </Section>
+            )}
+
+            {s.sceneContinuity && (
+              <Section
+                title={<><TypeBadge kind="Scene" /> Scene continuity</>}
+                copyText={s.sceneContinuity}
+              >
+                <p className="text-sm text-slate-200">{s.sceneContinuity}</p>
+              </Section>
+            )}
+
+            {s.multiReferenceInstructions && (
+              <Section
+                title="Multi-reference instructions"
+                copyText={s.multiReferenceInstructions}
+              >
+                <p className="text-sm text-slate-200">{s.multiReferenceInstructions}</p>
+              </Section>
+            )}
+
+            {s.suggestedReferenceImages && s.suggestedReferenceImages.length > 0 && (
+              <Section
+                title={<><TypeBadge kind="Refs" /> Suggested reference images</>}
+                copyText={s.suggestedReferenceImages.join('\n')}
+              >
+                <ul className="list-disc pl-5 space-y-1 text-sm text-slate-200">
+                  {s.suggestedReferenceImages.map((r, i) => (
+                    <li key={i}>{r}</li>
+                  ))}
+                </ul>
+              </Section>
+            )}
+
+            <div className="grid sm:grid-cols-2 gap-3 text-xs">
+              <Field label="Motion description" value={s.motionDescription} />
+              <Field label="Consistency refs" value={s.consistencyReferences.join(' · ')} />
+            </div>
           </div>
-          <Section title="Image prompt" copyText={s.imagePrompt}>
-            <code className="block bg-bg-panel/60 border border-bg-border rounded-lg p-3 font-mono text-xs">
-              {s.imagePrompt}
-            </code>
-          </Section>
-          <Section title="Video prompt" copyText={s.videoPrompt}>
-            <code className="block bg-bg-panel/60 border border-bg-border rounded-lg p-3 font-mono text-xs">
-              {s.videoPrompt}
-            </code>
-          </Section>
-          <div className="grid sm:grid-cols-2 gap-3 text-xs">
-            <Field label="Motion description" value={s.motionDescription} />
-            <Field label="Consistency refs" value={s.consistencyReferences.join(' · ')} />
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
+}
+
+function buildFullShotText(s: PromptOutput['shots'][number]): string {
+  const lines: string[] = [
+    `=== Shot ${s.shotNumber} ===`,
+    `[Camera] ${s.cameraMovement}`,
+    `[Image] ${s.imagePrompt}`,
+    `[Video] ${s.videoPrompt}`,
+  ];
+  if (s.motionPrompt) lines.push(`[Motion] ${s.motionPrompt}`);
+  if (s.negativePrompt) lines.push(`[Negative] ${s.negativePrompt}`);
+  if (s.characterConsistency) lines.push(`[Character] ${s.characterConsistency}`);
+  if (s.sceneContinuity) lines.push(`[Scene] ${s.sceneContinuity}`);
+  if (s.multiReferenceInstructions) lines.push(`[Multi-ref] ${s.multiReferenceInstructions}`);
+  if (s.suggestedReferenceImages?.length) {
+    lines.push(`[Reference images]\n - ${s.suggestedReferenceImages.join('\n - ')}`);
+  }
+  return lines.join('\n');
 }
 
 function ConsistencyView({ o }: { o: ConsistencyOutput }) {

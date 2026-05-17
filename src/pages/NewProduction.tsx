@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Sparkles, Rocket } from 'lucide-react';
 import { useProjects } from '../hooks/useProjects';
 import { createProject } from '../utils/project';
-import type { Platform, VideoDuration, VideoStyle } from '../types';
+import type { Platform, TargetTool, VideoDuration, VideoStyle } from '../types';
+import { TARGET_TOOL_LABELS } from '../types';
 
 const PLATFORMS: Platform[] = ['YouTube Shorts', 'TikTok', 'Instagram Reels'];
 const STYLES: VideoStyle[] = [
@@ -14,6 +15,7 @@ const STYLES: VideoStyle[] = [
   'simple kids animation',
 ];
 const DURATIONS: VideoDuration[] = [15, 30, 60];
+const TOOLS: TargetTool[] = ['general', 'vidu', 'runway', 'kling', 'pika'];
 
 export default function NewProduction() {
   const navigate = useNavigate();
@@ -23,11 +25,18 @@ export default function NewProduction() {
   const [platform, setPlatform] = useState<Platform>('YouTube Shorts');
   const [style, setStyle] = useState<VideoStyle>('Pixar-style claymation');
   const [duration, setDuration] = useState<VideoDuration>(30);
+  const [targetTool, setTargetTool] = useState<TargetTool>('vidu');
 
   function handleStart() {
     const trimmed = idea.trim();
     if (!trimmed) return;
-    const project = createProject({ idea: trimmed, platform, style, duration });
+    const project = createProject({
+      idea: trimmed,
+      platform,
+      style,
+      duration,
+      targetTool,
+    });
     save(project);
     navigate(`/project/${project.id}`);
   }
@@ -92,6 +101,32 @@ export default function NewProduction() {
               />
             ))}
           </div>
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="section-title block">Target tool</label>
+            {targetTool === 'vidu' && (
+              <span className="badge border-accent-violet/50 text-accent-violet bg-accent-violet/10">
+                <Sparkles className="w-3 h-3" />
+                Vidu Mode — multi-reference prompts
+              </span>
+            )}
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+            {TOOLS.map((t) => (
+              <ChoiceButton
+                key={t}
+                label={TARGET_TOOL_LABELS[t]}
+                active={targetTool === t}
+                onClick={() => setTargetTool(t)}
+              />
+            ))}
+          </div>
+          <p className="text-xs text-slate-500">
+            Vidu Mode generates extra fields per shot: motion prompt, character consistency, scene
+            continuity, negative prompt, and multi-reference instructions.
+          </p>
         </div>
 
         <div className="pt-2">
