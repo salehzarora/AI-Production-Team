@@ -103,7 +103,7 @@ function shortIdea(project: ProductionProject) {
 }
 
 function buildScript(project: ProductionProject): ScriptOutput {
-  const { idea, duration, style, platform } = project;
+  const { duration, style, platform } = project;
   const beats = duration === 15 ? 3 : duration === 30 ? 5 : 7;
   return {
     logline: `In ${duration} seconds, ${shortIdea(project).toLowerCase()} — told in ${style} for ${platform}.`,
