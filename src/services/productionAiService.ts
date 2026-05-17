@@ -34,15 +34,23 @@
 import type {
   Agent,
   AgentOutput,
+  CameraBlock,
+  Character,
   CharacterOutput,
+  CharacterReferenceBlock,
   ConsistencyOutput,
+  ContinuityBlock,
+  EnvironmentReferenceBlock,
   MarketingOutput,
+  MotionBlock,
   PreviousOutputs,
   ProductionProject,
   PromptOutput,
   PromptShot,
+  PropsBlock,
   SceneOutput,
   ScriptOutput,
+  StoryboardShot,
   StoryboardOutput,
 } from '../types';
 
@@ -255,12 +263,33 @@ function buildPrompts(
 
       // ---------- Vidu-specific fields ----------
       if (isVidu) {
+        // ---- v1 legacy fields (back-compat) ----
         base.motionPrompt = buildViduMotionPrompt(s, mood);
         base.characterConsistency = buildCharacterConsistency(hero?.name ?? 'Hero', heroPalette, heroRef, sidekick?.name);
         base.sceneContinuity = buildSceneContinuity(mainLocation, lighting, idx, shots.length);
         base.negativePrompt = buildViduNegativePrompt(styleTag);
         base.multiReferenceInstructions = buildMultiRefInstructions(idx);
         base.suggestedReferenceImages = buildSuggestedRefs(hero?.name ?? 'Hero', mainLocation, styleTag, idx === 0);
+
+        // ---- v2 structured production blocks ----
+        const charsInShot = pickCharactersForShot(hero?.name, sidekick?.name, idx, shots.length);
+        const propsList = scenes?.props ?? [];
+        const propForShot = propsList.length
+          ? propsList[idx % propsList.length]
+          : 'signature prop';
+        const isFirst = idx === 0;
+        const isLast = idx === shots.length - 1;
+        const prevShot = idx > 0 ? shots[idx - 1] : null;
+
+        base.characterReference = buildCharacterReferenceBlock(charsInShot, s, hero, sidekick);
+        base.environmentReference = buildEnvironmentReferenceBlock(mainLocation, envPrompt, lighting, mood, styleTag, isFirst);
+        base.propsRef = buildPropsBlock(propForShot, heroPalette);
+        base.mainImagePrompt = buildMainImagePrompt(s, styleTag, charsInShot, mainLocation, propForShot, lighting, mood, heroPalette);
+        base.viduVideoPrompt = buildViduVideoPromptDetailed(s, styleTag, charsInShot, mainLocation, propForShot, camMovement);
+        base.motion = buildMotionBlock(s, propForShot);
+        base.camera = buildCameraBlock(s, camMovement);
+        base.negativeChecklist = buildNegativeChecklist();
+        base.continuity = buildContinuityBlock(s, prevShot, mainLocation, propForShot, isFirst, isLast);
       }
 
       return base;
@@ -415,6 +444,217 @@ function buildSuggestedRefs(
   ];
   if (!isFirstShot) refs.push('Last frame of previous shot');
   return refs;
+}
+
+// ---------------------------------------------------------------------------
+// Vidu Mode v2 — structured production blocks
+// ---------------------------------------------------------------------------
+
+function pickCharactersForShot(
+  heroName: string | undefined,
+  sidekickName: string | undefined,
+  idx: number,
+  total: number
+): string[] {
+  const out: string[] = [];
+  if (heroName) out.push(heroName);
+  // Sidekick appears in middle and final shots if present
+  if (sidekickName && (idx === Math.floor(total / 2) || idx === total - 1)) {
+    out.push(sidekickName);
+  }
+  return out;
+}
+
+function buildCharacterReferenceBlock(
+  charsInShot: string[],
+  s: StoryboardShot,
+  hero: Character | undefined,
+  sidekick: Character | undefined
+): CharacterReferenceBlock {
+  const heroName = hero?.name ?? 'Hero';
+  const charsDisplay = charsInShot.join(' + ') || heroName;
+  const refLines = charsInShot.map((name) => {
+    if (name === hero?.name) return `${name} reference sheet (${hero.referencePrompt})`;
+    if (sidekick && name === sidekick.name) return `${name} reference sheet (${sidekick.referencePrompt})`;
+    return `${name} reference sheet`;
+  });
+
+  return {
+    needed: refLines.length ? refLines : [`${heroName} reference sheet`],
+    posePrompt:
+      `${charsDisplay}: ${s.action.toLowerCase()}. Body language reads as ${s.characterEmotion}. ` +
+      `Clear silhouette, no occlusion of the face by hands or props.`,
+    emotionPrompt:
+      `${charsDisplay} face shows ${s.characterEmotion} — eyes ${
+        s.characterEmotion === 'surprised' || s.characterEmotion === 'elated' ? 'wide' : 'focused'
+      }, mouth ${
+        s.characterEmotion === 'frustrated' ? 'tight' : s.characterEmotion === 'sly' ? 'half-smile' : 'natural'
+      }, micro-expression consistent with the reference sheet.`,
+    consistencyNotes:
+      `Match the reference sheet exactly: same hair, same outfit, same proportions, same palette ` +
+      `(${(hero?.colors ?? []).join(', ') || 'locked palette'}). Do NOT regenerate the character ` +
+      `from scratch — feed the reference image into Vidu's Subject Reference slot and reuse the ` +
+      `same seed as previous shots.`,
+  };
+}
+
+function buildEnvironmentReferenceBlock(
+  location: string,
+  envPrompt: string,
+  lighting: string,
+  mood: string,
+  styleTag: string,
+  isFirstShot: boolean
+): EnvironmentReferenceBlock {
+  return {
+    imagePrompt:
+      `${styleTag} environment plate of ${location}. ${envPrompt}. Vertical 9:16, ` +
+      `${lighting}, atmospheric depth, clear foreground / midground / background separation, ` +
+      `clean negative space for character placement.`,
+    consistencyNotes: isFirstShot
+      ? `Establishing the location. Save this generated environment plate — every following ` +
+        `shot must use it as a reference so background details (architecture, signage, props, ` +
+        `sky color) stay identical.`
+      : `Re-use the SAME environment plate from shot 1 as reference. Do not regenerate from ` +
+        `scratch — that will cause background drift. Only re-render the foreground action.`,
+    lightingAndMood: `${lighting} · Mood: ${mood}. Keep key-light direction consistent across all shots in this scene.`,
+  };
+}
+
+function buildPropsBlock(prop: string, palette: string): PropsBlock {
+  return {
+    objectPrompt:
+      `${prop}, hero-readable scale, sharp focus, matches scene palette ` +
+      `${palette ? `(${palette})` : ''}, no logos, no random text.`,
+    consistencyNotes:
+      `If ${prop} appears in multiple shots it must be IDENTICAL: same color, same wear ` +
+      `pattern, same scale. Re-use the prop reference image across shots — do not let Vidu ` +
+      `re-imagine it.`,
+    importantDetails:
+      `Lock: silhouette, primary color, surface finish (matte / glossy), any distinguishing ` +
+      `mark. Inject the prop image into Vidu's secondary reference slot when the prop is ` +
+      `on-screen.`,
+  };
+}
+
+function buildMainImagePrompt(
+  s: StoryboardShot,
+  styleTag: string,
+  charsInShot: string[],
+  location: string,
+  prop: string,
+  lighting: string,
+  mood: string,
+  palette: string
+): string {
+  const charsDisplay = charsInShot.join(' and ') || 'hero';
+  return [
+    `${styleTag}`,
+    `${s.cameraAngle.toLowerCase()} of ${charsDisplay} in ${location}`,
+    `action: ${s.action.toLowerCase()}`,
+    `expression: ${s.characterEmotion}`,
+    `featured prop: ${prop}`,
+    `lighting: ${lighting}`,
+    `mood: ${mood}`,
+    palette ? `palette locked to: ${palette}` : '',
+    s.visualNotes,
+    `9:16 vertical, sharp focus, cinematic composition, high detail, clean negative space top`,
+  ]
+    .filter(Boolean)
+    .join('. ');
+}
+
+function buildViduVideoPromptDetailed(
+  s: StoryboardShot,
+  styleTag: string,
+  charsInShot: string[],
+  location: string,
+  prop: string,
+  camMovement: string
+): string {
+  const charsDisplay = charsInShot.join(' and ') || 'hero';
+  return [
+    `${styleTag} animation, ${s.cameraAngle.toLowerCase()}`,
+    `${charsDisplay} ${s.action.toLowerCase()} with ${s.characterEmotion} expression in ${location}`,
+    `featured prop: ${prop}`,
+    `camera: ${camMovement.toLowerCase()}`,
+    `duration ${s.duration}, 24fps smooth motion, no flicker`,
+    `IMPORTANT: keep character identity, environment, and props 100% consistent with the ` +
+      `uploaded reference images — do not reinterpret them`,
+  ].join('. ');
+}
+
+function buildMotionBlock(s: StoryboardShot, prop: string): MotionBlock {
+  return {
+    characterAction:
+      `Primary: hero ${s.action.toLowerCase()}. Secondary: subtle breathing, micro-blinks, ` +
+      `hair / cloth physics. Emotion arc settles into "${s.characterEmotion}" by mid-shot.`,
+    objectMovement:
+      `${prop} moves with the action — natural physics, no teleporting, no morphing. If ` +
+      `held by the hero, it follows the hand without slipping.`,
+    timing:
+      `Shot duration: ${s.duration}. First 20% = setup pose. Middle 60% = main action. ` +
+      `Last 20% = held expression for a clean cut. Avoid sudden mid-shot speed changes.`,
+  };
+}
+
+function buildCameraBlock(s: StoryboardShot, camMovement: string): CameraBlock {
+  return {
+    angle: s.cameraAngle,
+    movement: camMovement,
+    framing:
+      `9:16 vertical. Hero positioned on the rule-of-thirds line, eyes in the upper third. ` +
+      `Top 15% kept clear for caption overlay. No critical detail in the bottom 10% (mobile ` +
+      `UI safe zone).`,
+  };
+}
+
+function buildNegativeChecklist(): string[] {
+  return [
+    'Do not change character identity',
+    'Do not change character colors / palette',
+    'Do not change face details (eyes, nose, mouth proportions)',
+    'No extra characters appearing in the background',
+    'No distorted or extra hands / fingers',
+    'No flickering between frames',
+    'No text / watermark artifacts',
+    'No random background changes vs. the environment reference',
+    'No style drift away from the reference style',
+    'No motion blur on the face',
+  ];
+}
+
+function buildContinuityBlock(
+  s: StoryboardShot,
+  prev: StoryboardShot | null,
+  location: string,
+  prop: string,
+  isFirst: boolean,
+  isLast: boolean
+): ContinuityBlock {
+  if (isFirst) {
+    return {
+      remainsSame:
+        `This is the establishing shot — nothing to carry over. Lock the character ` +
+        `reference, environment plate, and prop reference here so every following shot ` +
+        `can reuse them.`,
+      whatChanges: `Sets the world. Introduces the hero and the location (${location}).`,
+    };
+  }
+  const carry = [
+    `Character identity, outfit, palette (same as shot ${s.shotNumber - 1})`,
+    `Location: ${location} (same environment plate)`,
+    `Lighting direction (same key-light side)`,
+    `${prop} appearance (identical color, scale, wear)`,
+  ].join('; ');
+  const changes = isLast
+    ? `Final beat — hero arrives at the payoff pose. Camera holds longer. Frame composed for loop back to shot 1.`
+    : `Action evolves: ${prev?.action.toLowerCase() ?? 'previous beat'} → ${s.action.toLowerCase()}. ` +
+      `Emotion shifts to ${s.characterEmotion}. Camera moves to ${s.cameraAngle.toLowerCase()}.`;
+  return {
+    remainsSame: carry,
+    whatChanges: changes,
+  };
 }
 
 function buildConsistency(

@@ -103,6 +103,59 @@ export interface StoryboardOutput {
   shots: StoryboardShot[];
 }
 
+// ---------------------------------------------------------------------------
+// Vidu Mode — structured per-shot blocks designed for a real multi-reference
+// image-to-video production workflow.
+// ---------------------------------------------------------------------------
+
+export interface CharacterReferenceBlock {
+  /** Names of characters that appear in this shot (must match Character Bible). */
+  needed: string[];
+  /** Pose prompt for the shot — describes body language and stance. */
+  posePrompt: string;
+  /** Emotion prompt — face / expression for the shot. */
+  emotionPrompt: string;
+  /** How to keep the character on-model relative to the reference sheet. */
+  consistencyNotes: string;
+}
+
+export interface EnvironmentReferenceBlock {
+  /** Image prompt that builds the environment plate for this shot. */
+  imagePrompt: string;
+  /** Notes for keeping the place identical across shots. */
+  consistencyNotes: string;
+  /** Lighting direction + mood for the shot. */
+  lightingAndMood: string;
+}
+
+export interface PropsBlock {
+  /** Prompt for the prop / object featured in the shot. */
+  objectPrompt: string;
+  /** How to keep the prop identical across shots. */
+  consistencyNotes: string;
+  /** Specific details (color, scale, wear) that must not drift. */
+  importantDetails: string;
+}
+
+export interface MotionBlock {
+  characterAction: string;
+  objectMovement: string;
+  timing: string;
+}
+
+export interface CameraBlock {
+  angle: string;
+  movement: string;
+  framing: string;
+}
+
+export interface ContinuityBlock {
+  /** Elements that must NOT change vs. the previous shot. */
+  remainsSame: string;
+  /** Elements that intentionally change in this shot. */
+  whatChanges: string;
+}
+
 export interface PromptShot {
   shotNumber: number;
   imagePrompt: string;
@@ -110,13 +163,25 @@ export interface PromptShot {
   motionDescription: string;
   cameraMovement: string;
   consistencyReferences: string[];
-  // ---- Vidu Mode (optional, populated when targetTool === 'vidu') ----
+
+  // ---- Vidu Mode v1 (legacy free-form, kept for back-compat) ----
   motionPrompt?: string;
   characterConsistency?: string;
   sceneContinuity?: string;
   negativePrompt?: string;
   multiReferenceInstructions?: string;
   suggestedReferenceImages?: string[];
+
+  // ---- Vidu Mode v2 (structured production blocks) ----
+  characterReference?: CharacterReferenceBlock;
+  environmentReference?: EnvironmentReferenceBlock;
+  propsRef?: PropsBlock;
+  mainImagePrompt?: string;
+  viduVideoPrompt?: string;
+  motion?: MotionBlock;
+  camera?: CameraBlock;
+  negativeChecklist?: string[];
+  continuity?: ContinuityBlock;
 }
 
 export interface PromptOutput {

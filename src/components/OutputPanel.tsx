@@ -274,15 +274,16 @@ function PromptView({ o }: { o: PromptOutput }) {
   return (
     <div className="space-y-4">
       {o.shots.map((s) => {
-        const isVidu = !!s.motionPrompt || !!s.negativePrompt || !!s.characterConsistency;
+        const isViduV2 = !!s.characterReference || !!s.environmentReference || !!s.mainImagePrompt;
+        const isViduV1 = !isViduV2 && (!!s.motionPrompt || !!s.negativePrompt || !!s.characterConsistency);
         const fullShotText = buildFullShotText(s);
         return (
-          <div key={s.shotNumber} className="card p-4 space-y-3">
+          <div key={s.shotNumber} className="card p-4 space-y-4">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="font-semibold text-white">Shot {s.shotNumber}</div>
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="badge border-bg-border text-slate-400">{s.cameraMovement}</span>
-                {isVidu && (
+                {(isViduV1 || isViduV2) && (
                   <span className="badge border-accent-violet/50 text-accent-violet bg-accent-violet/10">
                     Vidu
                   </span>
@@ -291,91 +292,10 @@ function PromptView({ o }: { o: PromptOutput }) {
               </div>
             </div>
 
-            <Section
-              title={<><TypeBadge kind="Image" /> Image prompt</>}
-              copyText={s.imagePrompt}
-            >
-              <code className="block bg-bg-panel/60 border border-bg-border rounded-lg p-3 font-mono text-xs whitespace-pre-wrap">
-                {s.imagePrompt}
-              </code>
-            </Section>
-
-            <Section
-              title={<><TypeBadge kind="Video" /> Video prompt</>}
-              copyText={s.videoPrompt}
-            >
-              <code className="block bg-bg-panel/60 border border-bg-border rounded-lg p-3 font-mono text-xs whitespace-pre-wrap">
-                {s.videoPrompt}
-              </code>
-            </Section>
-
-            {s.motionPrompt && (
-              <Section
-                title={<><TypeBadge kind="Motion" /> Motion prompt</>}
-                copyText={s.motionPrompt}
-              >
-                <code className="block bg-bg-panel/60 border border-bg-border rounded-lg p-3 font-mono text-xs whitespace-pre-wrap">
-                  {s.motionPrompt}
-                </code>
-              </Section>
-            )}
-
-            <Section
-              title={<><TypeBadge kind="Camera" /> Camera movement</>}
-              copyText={s.cameraMovement}
-            >
-              <p className="text-sm">{s.cameraMovement}</p>
-            </Section>
-
-            {s.negativePrompt && (
-              <Section
-                title={<><TypeBadge kind="Negative" /> Negative prompt</>}
-                copyText={s.negativePrompt}
-              >
-                <code className="block bg-bg-panel/60 border border-bg-border rounded-lg p-3 font-mono text-xs whitespace-pre-wrap">
-                  {s.negativePrompt}
-                </code>
-              </Section>
-            )}
-
-            {s.characterConsistency && (
-              <Section
-                title={<><TypeBadge kind="Character" /> Character consistency</>}
-                copyText={s.characterConsistency}
-              >
-                <p className="text-sm text-slate-200">{s.characterConsistency}</p>
-              </Section>
-            )}
-
-            {s.sceneContinuity && (
-              <Section
-                title={<><TypeBadge kind="Scene" /> Scene continuity</>}
-                copyText={s.sceneContinuity}
-              >
-                <p className="text-sm text-slate-200">{s.sceneContinuity}</p>
-              </Section>
-            )}
-
-            {s.multiReferenceInstructions && (
-              <Section
-                title="Multi-reference instructions"
-                copyText={s.multiReferenceInstructions}
-              >
-                <p className="text-sm text-slate-200">{s.multiReferenceInstructions}</p>
-              </Section>
-            )}
-
-            {s.suggestedReferenceImages && s.suggestedReferenceImages.length > 0 && (
-              <Section
-                title={<><TypeBadge kind="Refs" /> Suggested reference images</>}
-                copyText={s.suggestedReferenceImages.join('\n')}
-              >
-                <ul className="list-disc pl-5 space-y-1 text-sm text-slate-200">
-                  {s.suggestedReferenceImages.map((r, i) => (
-                    <li key={i}>{r}</li>
-                  ))}
-                </ul>
-              </Section>
+            {isViduV2 ? (
+              <ViduDetailedBlocks s={s} />
+            ) : (
+              <LegacyPromptBlocks s={s} />
             )}
 
             <div className="grid sm:grid-cols-2 gap-3 text-xs">
@@ -389,21 +309,386 @@ function PromptView({ o }: { o: PromptOutput }) {
   );
 }
 
+// ---------- Vidu v2 structured blocks ----------
+
+function ViduDetailedBlocks({ s }: { s: PromptOutput['shots'][number] }) {
+  return (
+    <div className="space-y-4">
+      {/* 1. Character References */}
+      {s.characterReference && (
+        <BlockCard kind="Character" title="1. Character References">
+          {s.characterReference.needed.length > 0 && (
+            <SubField
+              label="Needed for this shot"
+              value={s.characterReference.needed.join(' · ')}
+              copyText={s.characterReference.needed.join('\n')}
+            />
+          )}
+          <SubField
+            label="Pose prompt"
+            value={s.characterReference.posePrompt}
+            mono
+            copyText={s.characterReference.posePrompt}
+          />
+          <SubField
+            label="Emotion prompt"
+            value={s.characterReference.emotionPrompt}
+            mono
+            copyText={s.characterReference.emotionPrompt}
+          />
+          <SubField
+            label="Consistency notes"
+            value={s.characterReference.consistencyNotes}
+            copyText={s.characterReference.consistencyNotes}
+          />
+        </BlockCard>
+      )}
+
+      {/* 2. Place / Environment Reference */}
+      {s.environmentReference && (
+        <BlockCard kind="Scene" title="2. Place / Environment Reference">
+          <SubField
+            label="Environment image prompt"
+            value={s.environmentReference.imagePrompt}
+            mono
+            copyText={s.environmentReference.imagePrompt}
+          />
+          <SubField
+            label="Place consistency notes"
+            value={s.environmentReference.consistencyNotes}
+            copyText={s.environmentReference.consistencyNotes}
+          />
+          <SubField
+            label="Lighting and mood"
+            value={s.environmentReference.lightingAndMood}
+            copyText={s.environmentReference.lightingAndMood}
+          />
+        </BlockCard>
+      )}
+
+      {/* 3. Props / Objects */}
+      {s.propsRef && (
+        <BlockCard kind="Refs" title="3. Props / Objects">
+          <SubField
+            label="Object prompt"
+            value={s.propsRef.objectPrompt}
+            mono
+            copyText={s.propsRef.objectPrompt}
+          />
+          <SubField
+            label="Object consistency notes"
+            value={s.propsRef.consistencyNotes}
+            copyText={s.propsRef.consistencyNotes}
+          />
+          <SubField
+            label="Important details to keep the same"
+            value={s.propsRef.importantDetails}
+            copyText={s.propsRef.importantDetails}
+          />
+        </BlockCard>
+      )}
+
+      {/* 4. Main Image Prompt */}
+      {s.mainImagePrompt && (
+        <BlockCard kind="Image" title="4. Main Image Prompt">
+          <SubField label="Image generation prompt" value={s.mainImagePrompt} mono copyText={s.mainImagePrompt} />
+        </BlockCard>
+      )}
+
+      {/* 5. Vidu Image-to-Video Prompt */}
+      {s.viduVideoPrompt && (
+        <BlockCard kind="Video" title="5. Vidu Image-to-Video Prompt">
+          <SubField label="Video prompt" value={s.viduVideoPrompt} mono copyText={s.viduVideoPrompt} />
+        </BlockCard>
+      )}
+
+      {/* 6. Motion Prompt */}
+      {s.motion && (
+        <BlockCard kind="Motion" title="6. Motion Prompt">
+          <SubField label="Character action" value={s.motion.characterAction} copyText={s.motion.characterAction} />
+          <SubField label="Object movement" value={s.motion.objectMovement} copyText={s.motion.objectMovement} />
+          <SubField label="Timing" value={s.motion.timing} copyText={s.motion.timing} />
+        </BlockCard>
+      )}
+
+      {/* 7. Camera Prompt */}
+      {s.camera && (
+        <BlockCard kind="Camera" title="7. Camera Prompt">
+          <SubField label="Camera angle" value={s.camera.angle} copyText={s.camera.angle} />
+          <SubField label="Camera movement" value={s.camera.movement} copyText={s.camera.movement} />
+          <SubField label="Framing" value={s.camera.framing} copyText={s.camera.framing} />
+        </BlockCard>
+      )}
+
+      {/* 8. Negative Prompt (checklist) */}
+      {s.negativeChecklist && s.negativeChecklist.length > 0 && (
+        <BlockCard kind="Negative" title="8. Negative Prompt">
+          <div className="flex items-center justify-end -mt-1 mb-1">
+            <CopyButton text={s.negativeChecklist.join(', ')} label="Copy as line" variant="soft" />
+          </div>
+          <ul className="space-y-1 text-sm text-slate-200">
+            {s.negativeChecklist.map((n, i) => (
+              <li key={i} className="flex gap-2">
+                <span className="text-accent-pink">✕</span>
+                <span>{n}</span>
+              </li>
+            ))}
+          </ul>
+        </BlockCard>
+      )}
+
+      {/* 9. Continuity Notes */}
+      {s.continuity && (
+        <BlockCard kind="Character" title="9. Continuity Notes">
+          <SubField
+            label="What must remain the same"
+            value={s.continuity.remainsSame}
+            copyText={s.continuity.remainsSame}
+          />
+          <SubField
+            label="What changes in this shot"
+            value={s.continuity.whatChanges}
+            copyText={s.continuity.whatChanges}
+          />
+        </BlockCard>
+      )}
+    </div>
+  );
+}
+
+function BlockCard({
+  kind,
+  title,
+  children,
+}: {
+  kind: BadgeKind;
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="card p-4 bg-bg-panel/40 space-y-3">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-2">
+          <TypeBadge kind={kind} />
+          <span className="text-sm font-semibold text-white">{title}</span>
+        </div>
+      </div>
+      <div className="space-y-3">{children}</div>
+    </div>
+  );
+}
+
+function SubField({
+  label,
+  value,
+  copyText,
+  mono = false,
+}: {
+  label: string;
+  value: string;
+  copyText?: string;
+  mono?: boolean;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="section-title">{label}</span>
+        {copyText !== undefined && <CopyButton text={copyText} variant="soft" />}
+      </div>
+      {mono ? (
+        <code className="block bg-bg-panel/70 border border-bg-border rounded-lg p-3 font-mono text-xs whitespace-pre-wrap leading-relaxed">
+          {value}
+        </code>
+      ) : (
+        <p className="text-sm text-slate-200 leading-relaxed">{value}</p>
+      )}
+    </div>
+  );
+}
+
+// ---------- Legacy Vidu v1 / general prompts ----------
+
+function LegacyPromptBlocks({ s }: { s: PromptOutput['shots'][number] }) {
+  return (
+    <div className="space-y-4">
+      <Section
+        title={<><TypeBadge kind="Image" /> Image prompt</>}
+        copyText={s.imagePrompt}
+      >
+        <code className="block bg-bg-panel/60 border border-bg-border rounded-lg p-3 font-mono text-xs whitespace-pre-wrap">
+          {s.imagePrompt}
+        </code>
+      </Section>
+
+      <Section
+        title={<><TypeBadge kind="Video" /> Video prompt</>}
+        copyText={s.videoPrompt}
+      >
+        <code className="block bg-bg-panel/60 border border-bg-border rounded-lg p-3 font-mono text-xs whitespace-pre-wrap">
+          {s.videoPrompt}
+        </code>
+      </Section>
+
+      {s.motionPrompt && (
+        <Section
+          title={<><TypeBadge kind="Motion" /> Motion prompt</>}
+          copyText={s.motionPrompt}
+        >
+          <code className="block bg-bg-panel/60 border border-bg-border rounded-lg p-3 font-mono text-xs whitespace-pre-wrap">
+            {s.motionPrompt}
+          </code>
+        </Section>
+      )}
+
+      <Section
+        title={<><TypeBadge kind="Camera" /> Camera movement</>}
+        copyText={s.cameraMovement}
+      >
+        <p className="text-sm">{s.cameraMovement}</p>
+      </Section>
+
+      {s.negativePrompt && (
+        <Section
+          title={<><TypeBadge kind="Negative" /> Negative prompt</>}
+          copyText={s.negativePrompt}
+        >
+          <code className="block bg-bg-panel/60 border border-bg-border rounded-lg p-3 font-mono text-xs whitespace-pre-wrap">
+            {s.negativePrompt}
+          </code>
+        </Section>
+      )}
+
+      {s.characterConsistency && (
+        <Section
+          title={<><TypeBadge kind="Character" /> Character consistency</>}
+          copyText={s.characterConsistency}
+        >
+          <p className="text-sm text-slate-200">{s.characterConsistency}</p>
+        </Section>
+      )}
+
+      {s.sceneContinuity && (
+        <Section
+          title={<><TypeBadge kind="Scene" /> Scene continuity</>}
+          copyText={s.sceneContinuity}
+        >
+          <p className="text-sm text-slate-200">{s.sceneContinuity}</p>
+        </Section>
+      )}
+
+      {s.multiReferenceInstructions && (
+        <Section title="Multi-reference instructions" copyText={s.multiReferenceInstructions}>
+          <p className="text-sm text-slate-200">{s.multiReferenceInstructions}</p>
+        </Section>
+      )}
+
+      {s.suggestedReferenceImages && s.suggestedReferenceImages.length > 0 && (
+        <Section
+          title={<><TypeBadge kind="Refs" /> Suggested reference images</>}
+          copyText={s.suggestedReferenceImages.join('\n')}
+        >
+          <ul className="list-disc pl-5 space-y-1 text-sm text-slate-200">
+            {s.suggestedReferenceImages.map((r, i) => (
+              <li key={i}>{r}</li>
+            ))}
+          </ul>
+        </Section>
+      )}
+    </div>
+  );
+}
+
 function buildFullShotText(s: PromptOutput['shots'][number]): string {
-  const lines: string[] = [
-    `=== Shot ${s.shotNumber} ===`,
-    `[Camera] ${s.cameraMovement}`,
-    `[Image] ${s.imagePrompt}`,
-    `[Video] ${s.videoPrompt}`,
-  ];
-  if (s.motionPrompt) lines.push(`[Motion] ${s.motionPrompt}`);
-  if (s.negativePrompt) lines.push(`[Negative] ${s.negativePrompt}`);
-  if (s.characterConsistency) lines.push(`[Character] ${s.characterConsistency}`);
-  if (s.sceneContinuity) lines.push(`[Scene] ${s.sceneContinuity}`);
-  if (s.multiReferenceInstructions) lines.push(`[Multi-ref] ${s.multiReferenceInstructions}`);
-  if (s.suggestedReferenceImages?.length) {
-    lines.push(`[Reference images]\n - ${s.suggestedReferenceImages.join('\n - ')}`);
+  const lines: string[] = [`=== Shot ${s.shotNumber} ===`];
+
+  // Prefer v2 structured fields when present.
+  if (s.characterReference) {
+    lines.push(
+      '',
+      '[1. CHARACTER REFERENCES]',
+      `Needed: ${s.characterReference.needed.join(' · ')}`,
+      `Pose: ${s.characterReference.posePrompt}`,
+      `Emotion: ${s.characterReference.emotionPrompt}`,
+      `Consistency: ${s.characterReference.consistencyNotes}`
+    );
   }
+  if (s.environmentReference) {
+    lines.push(
+      '',
+      '[2. ENVIRONMENT REFERENCE]',
+      `Image prompt: ${s.environmentReference.imagePrompt}`,
+      `Consistency: ${s.environmentReference.consistencyNotes}`,
+      `Lighting & mood: ${s.environmentReference.lightingAndMood}`
+    );
+  }
+  if (s.propsRef) {
+    lines.push(
+      '',
+      '[3. PROPS / OBJECTS]',
+      `Object prompt: ${s.propsRef.objectPrompt}`,
+      `Consistency: ${s.propsRef.consistencyNotes}`,
+      `Important details: ${s.propsRef.importantDetails}`
+    );
+  }
+  if (s.mainImagePrompt) {
+    lines.push('', '[4. MAIN IMAGE PROMPT]', s.mainImagePrompt);
+  }
+  if (s.viduVideoPrompt) {
+    lines.push('', '[5. VIDU IMAGE-TO-VIDEO PROMPT]', s.viduVideoPrompt);
+  }
+  if (s.motion) {
+    lines.push(
+      '',
+      '[6. MOTION PROMPT]',
+      `Character action: ${s.motion.characterAction}`,
+      `Object movement: ${s.motion.objectMovement}`,
+      `Timing: ${s.motion.timing}`
+    );
+  }
+  if (s.camera) {
+    lines.push(
+      '',
+      '[7. CAMERA PROMPT]',
+      `Angle: ${s.camera.angle}`,
+      `Movement: ${s.camera.movement}`,
+      `Framing: ${s.camera.framing}`
+    );
+  }
+  if (s.negativeChecklist && s.negativeChecklist.length > 0) {
+    lines.push('', '[8. NEGATIVE PROMPT]', ...s.negativeChecklist.map((n) => `  - ${n}`));
+  }
+  if (s.continuity) {
+    lines.push(
+      '',
+      '[9. CONTINUITY NOTES]',
+      `Remains same: ${s.continuity.remainsSame}`,
+      `What changes: ${s.continuity.whatChanges}`
+    );
+  }
+
+  // If nothing structured was present, fall back to legacy fields.
+  if (
+    !s.characterReference &&
+    !s.environmentReference &&
+    !s.propsRef &&
+    !s.mainImagePrompt &&
+    !s.viduVideoPrompt
+  ) {
+    lines.push(
+      `[Camera] ${s.cameraMovement}`,
+      `[Image] ${s.imagePrompt}`,
+      `[Video] ${s.videoPrompt}`
+    );
+    if (s.motionPrompt) lines.push(`[Motion] ${s.motionPrompt}`);
+    if (s.negativePrompt) lines.push(`[Negative] ${s.negativePrompt}`);
+    if (s.characterConsistency) lines.push(`[Character] ${s.characterConsistency}`);
+    if (s.sceneContinuity) lines.push(`[Scene] ${s.sceneContinuity}`);
+    if (s.multiReferenceInstructions) lines.push(`[Multi-ref] ${s.multiReferenceInstructions}`);
+    if (s.suggestedReferenceImages?.length) {
+      lines.push(`[Reference images]\n - ${s.suggestedReferenceImages.join('\n - ')}`);
+    }
+  }
+
   return lines.join('\n');
 }
 

@@ -43,50 +43,95 @@ npm run preview
 
 ## Vidu Mode
 
-When you pick **Vidu** as the Target tool on the New Production form, the Prompt Agent switches into a richer output mode designed for Vidu's multi-reference image-to-video pipeline. Each shot gets:
+When **Vidu** is selected as the Target tool, the Prompt Agent emits a structured 9-block output per shot designed for a real Vidu multi-reference image-to-video production. Every shot card in the Final Package contains:
 
-- **Image Prompt** — descriptive first-frame prompt with character + environment + lighting baked in.
-- **Video Prompt** — short, concrete action + camera clauses (Vidu prefers terse).
-- **Motion Prompt** — primary + secondary motion isolated, plus what to avoid.
-- **Camera Movement** — explicit camera language (push-in, dolly, tracking).
-- **Character Consistency** — instructions to lock identity across shots (seed + reference slot).
-- **Scene Continuity** — how this shot connects to the previous / next shot.
-- **Negative Prompt** — common Vidu failure modes stripped out.
-- **Multi-Reference Instructions** — exactly which images to upload to which slot.
-- **Suggested Reference Images** — the list of images you should prepare.
+**1. Character References**
+- `needed` — which characters appear in this shot (must match the Character Bible)
+- `posePrompt` — body language and stance
+- `emotionPrompt` — face / expression
+- `consistencyNotes` — how to keep the character on-model relative to the reference sheet (palette, seed, Subject Reference slot)
 
-The Final Package page shows a dedicated **Vidu Prompts** section with one card per shot, badges for each field type (Image / Video / Motion / Camera / Negative), per-field Copy buttons, and a **Copy full shot prompt** button.
+**2. Place / Environment Reference**
+- `imagePrompt` — generates the environment plate
+- `consistencyNotes` — how to keep the place identical across shots
+- `lightingAndMood` — key-light direction + mood
 
-### How to use Vidu prompts in Vidu
+**3. Props / Objects**
+- `objectPrompt` — the featured prop
+- `consistencyNotes` — how to keep the prop identical across shots
+- `importantDetails` — color, scale, wear pattern, distinguishing marks
 
-1. Open Vidu and pick **Image to Video** with **Subject Reference** enabled.
-2. Upload reference images to the multi-reference slots in this priority:
-   1. Hero character sheet (front + 3/4 + back) — locks identity.
-   2. Sidekick character sheet (if present).
-   3. Environment / location plate (from the Scene Bible).
-   4. Style swatch (palette + lighting sample).
-   5. From shot 2 onward: the **last frame of the previous shot** for continuity.
-3. Paste the **Image Prompt** into the prompt field and generate the first frame. Iterate until the frame matches the storyboard.
-4. Switch to video, paste the **Video Prompt** + **Motion Prompt**, paste the **Negative Prompt** into Vidu's negative field, and generate.
-5. Lock the seed for the project and reuse it across every shot — this is the single biggest lever for character consistency.
+**4. Main Image Prompt** — a single complete image-generation prompt for the shot (used to generate the first frame).
 
-### Multi-reference consistency — how to handle it
+**5. Vidu Image-to-Video Prompt** — the prompt you paste into Vidu's video field. Explicitly tells Vidu to keep character, environment, and props consistent with the uploaded references.
 
-- **Identity**: weight the character reference highest. Same seed across shots. Re-use the same character sheet image — don't regenerate it shot to shot.
-- **Look**: keep the style swatch + environment plate in every shot's reference set. If you drop them, Vidu will drift the look.
-- **Continuity**: for any shot after the first, swap the lowest-priority reference slot for the last frame of the previous shot. This is how you stitch shots together.
-- **Negative prompt**: copy the generated negative prompt verbatim — it already excludes Vidu's most common failure modes (extra fingers, morphing identity, style drift, flickering).
+**6. Motion Prompt**
+- `characterAction` — primary + secondary motion
+- `objectMovement` — how the prop moves
+- `timing` — beat structure within the shot (setup / action / hold)
+
+**7. Camera Prompt**
+- `angle` — wide / OTS / close / etc.
+- `movement` — push-in / dolly / hold / etc.
+- `framing` — composition + mobile safe-zones
+
+**8. Negative Prompt** — a checklist that explicitly forbids:
+- changing character identity
+- changing colors / palette
+- changing face details
+- extra characters
+- distorted hands
+- flickering
+- text artifacts
+- random background changes
+- style drift
+- motion blur on face
+
+**9. Continuity Notes**
+- `remainsSame` — exactly what must NOT change vs. the previous shot
+- `whatChanges` — what intentionally changes in this shot
+
+The Final Package shows a dedicated **Vidu Prompts** section with one card per shot, each block colored by type (Image / Video / Motion / Camera / Negative / Character / Scene / Refs). Every block has per-field Copy buttons and the whole shot can be copied with **Copy full shot prompt** or downloaded with **Export TXT**.
+
+### Real Vidu multi-reference workflow — how to use this output
+
+For each shot, follow this order:
+
+1. **Generate the first frame.**  Open an image generator. Paste **Main Image Prompt** (block 4). Iterate seeds until the frame matches the storyboard. Save it — this is your shot frame.
+2. **Prepare the reference images.**  You'll upload these into Vidu's multi-reference slots:
+   - Slot 1: **Character reference sheet** for each character in block 1's `needed` list. Use the SAME character sheet across every shot — never regenerate.
+   - Slot 2: **Environment plate** (block 2). Generate once from shot 1's environment prompt, reuse for every following shot.
+   - Slot 3: **Prop reference** (block 3) when the prop appears on screen.
+   - Slot 4: **Style swatch** (palette + lighting sample).
+   - Slot 5+ (shots 2..N): **Last frame of the previous shot** for continuity.
+3. **Set up Vidu.**  Choose Image-to-Video with Subject Reference enabled. Upload the references in the order above. Weight character reference highest.
+4. **Paste the prompts.**
+   - Video prompt field → block 5 (**Vidu Image-to-Video Prompt**)
+   - Motion field (if available) → block 6 fields concatenated
+   - Camera field (if available) → block 7
+   - Negative prompt field → block 8 — paste as a comma-separated line (use the **Copy as line** button)
+5. **Lock the seed.**  Same seed across every shot. This is the #1 lever for character identity stability.
+6. **Render, then prep the next shot.**  Save the last frame of the rendered video — it becomes a reference image for the next shot's continuity slot.
+
+### Multi-reference consistency — practical rules
+
+- **Identity**: same character sheet image, same seed, every shot. Block 1 `consistencyNotes` is non-negotiable — copy it verbatim into Vidu's prompt if needed.
+- **Place**: generate the environment plate once (from shot 1's block 2 prompt), reuse it forever. Block 2's `consistencyNotes` for shots 2..N explicitly tells Vidu not to regenerate the background.
+- **Props**: any prop that recurs needs its own reference image in slot 3. Block 3's `importantDetails` lists exactly which attributes to lock.
+- **Continuity**: block 9 spells out what must stay the same and what's allowed to change between adjacent shots. When in doubt, lock more, not less.
+- **Negative prompt**: copy block 8 as a comma-separated line into Vidu's negative prompt field. These are Vidu's most common failure modes.
 
 ### Adding other target tools later
 
 The `TargetTool` union is the single registration point. To add a tool (e.g. `'sora'`):
 
 1. **Extend the union** in `src/types/index.ts`: add `'sora'` to `TargetTool` and a label in `TARGET_TOOL_LABELS`.
-2. **Add a branch** in `src/services/productionAiService.ts` `buildPrompts` (alongside the `isVidu` branch). Write tool-specific image/video/motion prompt builders.
-3. **(Optional) Add a dedicated section** in `src/pages/FinalPackage.tsx` that renders only when `targetTool === 'sora'`, similar to the Vidu Prompts section.
-4. **(Optional) Add tool-specific fields** to `PromptShot` in `src/types/index.ts` if the tool needs extras (e.g. Sora's `duration` parameter or aspect-ratio variants).
+2. **Add a branch** in `src/services/productionAiService.ts` `buildPrompts` (alongside the `isVidu` branch). For tools that need a different per-shot structure, add tool-specific optional fields to `PromptShot` (e.g. `soraSpec?: SoraShotBlock`) and populate them.
+3. **Render the tool's blocks** in `src/components/OutputPanel.tsx` `PromptView` and in `src/pages/FinalPackage.tsx` `ViduShotCard` (rename / generalize as needed). Both files already pattern-match on which optional fields exist.
+4. **Extend the TXT export** in `buildTxtExport > promptsToTxt` to write the new fields.
+5. **Update the picker** by adding the tool id to the `TOOLS` array in `NewProduction.tsx`.
 
-The UI picks up the new tool automatically — it iterates over `TOOLS` in `NewProduction.tsx` (update the array), and Dashboard cards read from `TARGET_TOOL_LABELS`.
+The pipeline picks up the new tool automatically — Dashboard badges, project storage, and routing are all driven by the `TargetTool` union.
 
 ---
 
