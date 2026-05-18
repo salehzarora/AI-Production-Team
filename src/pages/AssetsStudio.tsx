@@ -1,11 +1,12 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, Boxes, Image as ImageIcon, MapPin, Users, Package } from 'lucide-react';
+import { ArrowLeft, Boxes, Image as ImageIcon, MapPin, Users, Package, Wifi, WifiOff } from 'lucide-react';
 import { useProject } from '../hooks/useProject';
 import { ensureAssets, updateAsset } from '../utils/project';
 import AssetCard from '../components/AssetCard';
+import { generateImageViaBackend, checkBackendHealth, BACKEND_URL } from '../services/imageApi';
 import type { AssetKind } from '../utils/project';
-import type { ProductionAsset } from '../types';
+import type { ProductionAsset, ShotImageAsset } from '../types';
 
 type Tab = AssetKind;
 
@@ -16,15 +17,28 @@ const TABS: { id: Tab; label: string; Icon: typeof Users }[] = [
   { id: 'shotImages', label: 'Shot Images', Icon: ImageIcon },
 ];
 
+const KIND_PARAM: Record<AssetKind, 'character' | 'environment' | 'prop' | 'shotImage'> = {
+  characters: 'character',
+  environments: 'environment',
+  props: 'prop',
+  shotImages: 'shotImage',
+};
+
 export default function AssetsStudio() {
   const { id } = useParams();
   const { project, loading, update } = useProject(id);
   const [tab, setTab] = useState<Tab>('characters');
-  // Normalize so we always have an `assets` object even on legacy projects.
+  const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
+
   const safeProject = useMemo(
     () => (project ? ensureAssets(project) : null),
     [project]
   );
+
+  // Check backend health once on mount
+  useEffect(() => {
+    checkBackendHealth().then(setBackendOnline);
+  }, []);
 
   if (loading) return <div className="text-slate-400">Loading...</div>;
   if (!safeProject) {
@@ -38,7 +52,7 @@ export default function AssetsStudio() {
     );
   }
 
-  const assets = safeProject.assets!; // ensureAssets guarantees this
+  const assets = safeProject.assets!;
 
   const counts = {
     characters: assets.characters.length,
@@ -47,6 +61,37 @@ export default function AssetsStudio() {
     shotImages: assets.shotImages.length,
   };
   const totalAssets = counts.characters + counts.environments + counts.props + counts.shotImages;
+
+  async function handleGenerate(kind: AssetKind, asset: ProductionAsset) {
+    // For shot images, collect uploaded reference images from the referenced assets.
+    const referenceImages: string[] = [];
+    if (kind === 'shotImages') {
+      const shotAsset = asset as ShotImageAsset;
+      for (const ref of shotAsset.referenceAssets) {
+        const match =
+          assets.characters.find((a) => a.name === ref || a.id === ref) ??
+          assets.environments.find((a) => a.name === ref || a.id === ref) ??
+          assets.props.find((a) => a.name === ref || a.id === ref);
+        if (match?.imageUrl) referenceImages.push(match.imageUrl);
+      }
+    }
+
+    const result = await generateImageViaBackend({
+      projectId: safeProject!.id,
+      assetKind: KIND_PARAM[kind],
+      assetId: asset.id,
+      prompt: asset.prompt,
+      negativePrompt: asset.negativePrompt,
+      notes: asset.notes,
+      referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
+    });
+
+    updateOne(kind, asset.id, {
+      imageUrl: result.imageUrl,
+      status: 'generated',
+      updatedAt: new Date().toISOString(),
+    });
+  }
 
   return (
     <div className="space-y-6">
@@ -65,6 +110,27 @@ export default function AssetsStudio() {
           <div className="text-sm text-slate-400 mt-0.5">
             {safeProject.title} · {totalAssets} asset{totalAssets === 1 ? '' : 's'}
           </div>
+        </div>
+
+        {/* Backend connection info */}
+        <div className="card p-3 flex flex-col gap-1 min-w-[220px]">
+          <div className="flex items-center gap-2 text-xs font-medium">
+            {backendOnline === null ? (
+              <span className="text-slate-400">Checking backend…</span>
+            ) : backendOnline ? (
+              <>
+                <Wifi className="w-3.5 h-3.5 text-accent-lime" />
+                <span className="text-accent-lime">Backend online</span>
+              </>
+            ) : (
+              <>
+                <WifiOff className="w-3.5 h-3.5 text-accent-pink" />
+                <span className="text-accent-pink">Backend offline</span>
+              </>
+            )}
+          </div>
+          <div className="text-[10px] text-slate-500 font-mono truncate">{BACKEND_URL}</div>
+          <div className="text-[10px] text-slate-500">API keys are stored only in the backend.</div>
         </div>
       </div>
 
@@ -104,7 +170,7 @@ export default function AssetsStudio() {
         })}
       </div>
 
-      {/* Empty state for current tab */}
+      {/* Asset grid */}
       {counts[tab] === 0 ? (
         <div className="card p-10 text-center">
           <p className="text-slate-300">No {TABS.find((t) => t.id === tab)?.label.toLowerCase()} yet.</p>
@@ -129,6 +195,7 @@ export default function AssetsStudio() {
                 onImageUploaded={(dataUrl) => updateOne('characters', a.id, { imageUrl: dataUrl, status: 'uploaded' })}
                 onImageCleared={() => updateOne('characters', a.id, { imageUrl: undefined, status: 'prompt-ready' })}
                 onNotesChanged={(notes) => updateOne('characters', a.id, { notes })}
+                onGenerate={backendOnline ? () => handleGenerate('characters', a) : undefined}
               />
             ))}
           {tab === 'environments' &&
@@ -140,6 +207,7 @@ export default function AssetsStudio() {
                 onImageUploaded={(dataUrl) => updateOne('environments', a.id, { imageUrl: dataUrl, status: 'uploaded' })}
                 onImageCleared={() => updateOne('environments', a.id, { imageUrl: undefined, status: 'prompt-ready' })}
                 onNotesChanged={(notes) => updateOne('environments', a.id, { notes })}
+                onGenerate={backendOnline ? () => handleGenerate('environments', a) : undefined}
               />
             ))}
           {tab === 'props' &&
@@ -151,6 +219,7 @@ export default function AssetsStudio() {
                 onImageUploaded={(dataUrl) => updateOne('props', a.id, { imageUrl: dataUrl, status: 'uploaded' })}
                 onImageCleared={() => updateOne('props', a.id, { imageUrl: undefined, status: 'prompt-ready' })}
                 onNotesChanged={(notes) => updateOne('props', a.id, { notes })}
+                onGenerate={backendOnline ? () => handleGenerate('props', a) : undefined}
               />
             ))}
           {tab === 'shotImages' &&
@@ -162,6 +231,7 @@ export default function AssetsStudio() {
                 onImageUploaded={(dataUrl) => updateOne('shotImages', a.id, { imageUrl: dataUrl, status: 'uploaded' })}
                 onImageCleared={() => updateOne('shotImages', a.id, { imageUrl: undefined, status: 'prompt-ready' })}
                 onNotesChanged={(notes) => updateOne('shotImages', a.id, { notes })}
+                onGenerate={backendOnline ? () => handleGenerate('shotImages', a) : undefined}
               />
             ))}
         </div>

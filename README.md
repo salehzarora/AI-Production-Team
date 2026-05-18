@@ -1,8 +1,8 @@
 # AI Production Team
 
-Turn one video idea into a complete animation production package — script, characters, **visual assets**, storyboard, **shot images**, Vidu prompts, consistency notes, marketing. The app manages the full asset creation workflow: every reference image you need is auto-prompted, and you can upload your generated images so they get carried through every downstream step.
+Turn one video idea into a complete animation production package — script, characters, **visual assets**, storyboard, **shot images**, Vidu prompts, consistency notes, marketing. The app manages the full asset creation workflow: every reference image you need is auto-prompted, and you can generate or upload images directly from the Assets Studio.
 
-This is a **frontend-only MVP**. All AI outputs are **mocked** (deterministic structured data derived from your inputs). The architecture is built so a real backend can be slotted in later without rewriting the UI.
+**Architecture**: React + Vite frontend + Node.js / Express backend. The backend holds all API keys; the frontend never touches provider credentials directly.
 
 ---
 
@@ -26,21 +26,72 @@ Projects are saved to `localStorage` so you can close the tab and continue later
 
 ---
 
-## Run it
+## Running the app
+
+### Frontend
 
 ```bash
 npm install
 npm run dev
 ```
 
-Then open the printed URL (default http://localhost:5173).
+Opens at http://localhost:5173. The app works standalone — all agent outputs are mocked, and you can upload images manually without the backend running.
 
-To build for production:
+To build:
 
 ```bash
 npm run build
 npm run preview
 ```
+
+### Backend (image generation)
+
+```bash
+cd server
+npm install
+npm run dev       # starts with tsx watch on port 3001
+```
+
+The backend starts at http://localhost:3001.
+
+**Without a provider configured** the backend runs in *placeholder mode*: the Generate Image button works end-to-end but returns a dark SVG placeholder instead of a real image. This lets you test the full UI flow immediately.
+
+#### Required environment variables
+
+Copy `server/.env.example` → `server/.env` and fill in your provider credentials:
+
+| Variable | Description |
+|---|---|
+| `PORT` | Port the server listens on (default `3001`) |
+| `IMAGE_API_KEY` | API key for your image generation provider |
+| `IMAGE_API_URL` | Base endpoint URL for your provider |
+
+Provider credentials are **server-side only** — they are never sent to the browser.
+
+#### Optional frontend env
+
+Copy `.env.example` → `.env` in the project root if your backend runs on a different port or host:
+
+```
+VITE_BACKEND_URL=http://localhost:3001
+```
+
+### How image generation works
+
+1. User clicks **Generate Image** on any asset card in Assets Studio.
+2. The frontend calls `POST /api/images/generate` on the backend (never the provider directly).
+3. The backend reads `IMAGE_API_KEY` / `IMAGE_API_URL` from `server/.env` and calls your image provider.
+4. The provider returns an image URL (or binary, which the server base64-encodes into a data URL).
+5. The backend forwards `{ success, imageUrl, provider, promptUsed }` to the frontend.
+6. The asset's image preview updates immediately and its status changes to `generated`.
+
+#### Adding a real provider
+
+Open [server/services/imageGenerationService.ts](server/services/imageGenerationService.ts) and replace the `TODO` block with your provider's `fetch` call. The file contains commented-out examples for **Replicate**, **Stability AI**, and **fal.ai**.
+
+#### Why API keys must stay in the backend
+
+Browsers have no secure secret storage. Any key placed in frontend code is visible to anyone who opens DevTools. The backend acts as a secure proxy — the browser only ever talks to `localhost:3001`, never to an external AI provider.
 
 ---
 
@@ -143,14 +194,15 @@ The pipeline picks up the new tool automatically — Dashboard badges, project s
 After the Character Agent runs, character asset prompts appear in the Studio automatically. After the Scene Agent runs, environment + prop prompts are seeded. After the Shot Image Agent runs, per-shot image prompts are seeded.
 
 For each asset card you can:
-- **Copy prompt** — paste into your image generator (Midjourney, Vidu, etc.).
-- **Upload image** — pick a local PNG/JPG. Stored inline (data URL) in localStorage.
+- **Generate Image** — calls the backend which calls your image provider. Status changes to `generated` and the preview appears immediately. Button is greyed out if the backend is offline.
+- **Copy prompt** — paste into your image generator (Midjourney, Vidu, etc.) instead.
+- **Upload image** — pick a local PNG/JPG if you generated elsewhere. Stored inline (data URL) in localStorage.
 - **Notes** — record seed, generator, palette decisions, anything you want to remember.
-- **Status badge** updates automatically: `prompt-ready` → `uploaded` once you upload.
+- **Status badge**: `missing` → `prompt-ready` → `uploaded` / `generated`
 
-> **localStorage note**: images are stored as data URLs in the same store as everything else. Browsers cap that at ~5 MB per origin. Large projects with many uploads will hit the limit — that's a known limitation of the frontend-only MVP. Backend storage / IndexedDB is the future fix.
+The header shows a live **backend connection status** chip. If the backend is offline the Generate button is disabled but everything else still works.
 
-A **Generate Image** button exists on every card but is intentionally disabled. The card shows the line *"Image generation will be connected later through a backend API. For now, copy the prompt into Vidu or upload your generated reference image."*
+> **localStorage note**: images are stored as data URLs. Browsers cap that at ~5 MB per origin. Large projects with many uploads will hit the limit. Backend storage / IndexedDB is the future fix.
 
 ### The full production workflow
 
@@ -185,12 +237,20 @@ The pipeline strip at the top shows progress at a glance.
 ## Project structure
 
 ```
-src/
-  components/        # AgentCard, WorkflowPipeline, StatusBadge, OutputPanel, CopyButton, Layout
+server/                         # Express backend (Node.js + TypeScript)
+  index.ts                      # Server entry — CORS, JSON, routes
+  routes/images.ts              # POST /api/images/generate
+  controllers/imageController.ts
+  services/imageGenerationService.ts  # Provider-agnostic image generation (add your provider here)
+  .env.example                  # Required env vars template
+  package.json
+
+src/                            # React + Vite frontend
+  components/        # AgentCard, AssetCard, WorkflowPipeline, StatusBadge, OutputPanel, CopyButton, Layout
   data/              # agents.ts — agent catalog + pipeline order
   hooks/             # useProjects, useProject (localStorage-backed)
-  pages/             # Dashboard, NewProduction, Workflow, FinalPackage
-  services/          # productionAiService.ts — mock AI service (swap point for backend)
+  pages/             # Dashboard, NewProduction, Workflow, AssetsStudio, FinalPackage
+  services/          # productionAiService.ts (mock agents), imageApi.ts (backend client)
   types/             # All TS types: ProductionProject, WorkflowStep, Agent, output shapes
   utils/             # storage, project (immutable transforms), id, copy
 ```
@@ -252,7 +312,7 @@ To go live:
 ## Constraints
 
 - No authentication.
-- No backend, no database.
-- No paid APIs.
-- No API keys in the client.
-- Frontend MVP only. Build it, ship it, then plug AI in behind the same interface.
+- No database (localStorage only).
+- No API keys in the client — backend proxy only.
+- No video generation yet (image generation first).
+- Agent outputs are still mocked; real LLM integration is the next phase.

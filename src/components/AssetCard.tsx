@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Image as ImageIcon, Sparkles, Upload, X } from 'lucide-react';
+import { Image as ImageIcon, Loader2, Sparkles, Upload, X } from 'lucide-react';
 import type { AssetStatus, ProductionAsset } from '../types';
 import { fileToDataUrl } from '../utils/image';
 import CopyButton from './CopyButton';
@@ -11,6 +11,8 @@ interface Props {
   onImageUploaded: (dataUrl: string) => void;
   onImageCleared: () => void;
   onNotesChanged: (notes: string) => void;
+  /** When provided, the Generate Image button becomes active. Should call the backend and resolve with the image URL, or throw on failure. */
+  onGenerate?: () => Promise<void>;
 }
 
 const STATUS_STYLES: Record<AssetStatus, string> = {
@@ -33,9 +35,12 @@ export default function AssetCard({
   onImageUploaded,
   onImageCleared,
   onNotesChanged,
+  onGenerate,
 }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [generateError, setGenerateError] = useState<string | null>(null);
 
   async function handleFile(file: File) {
     setUploadError(null);
@@ -44,8 +49,20 @@ export default function AssetCard({
       onImageUploaded(dataUrl);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Upload failed.';
-      // Most likely localStorage quota — surface plainly.
       setUploadError(msg);
+    }
+  }
+
+  async function handleGenerate() {
+    if (!onGenerate) return;
+    setGenerateError(null);
+    setGenerating(true);
+    try {
+      await onGenerate();
+    } catch (err) {
+      setGenerateError(err instanceof Error ? err.message : 'Generation failed.');
+    } finally {
+      setGenerating(false);
     }
   }
 
@@ -122,18 +139,23 @@ export default function AssetCard({
             e.target.value = '';
           }}
         />
-        <button onClick={() => fileRef.current?.click()} className="btn-ghost">
+        <button onClick={() => fileRef.current?.click()} className="btn-ghost" disabled={generating}>
           <Upload className="w-4 h-4" />
           {asset.imageUrl ? 'Replace image' : 'Upload image'}
         </button>
         <button
           type="button"
-          disabled
-          className="btn-soft cursor-not-allowed opacity-60"
-          title="AI image generation will be wired through a backend later"
+          onClick={handleGenerate}
+          disabled={!onGenerate || generating}
+          className={`btn-soft ${!onGenerate ? 'cursor-not-allowed opacity-40' : ''}`}
+          title={onGenerate ? 'Generate via backend API' : 'Backend not reachable'}
         >
-          <Sparkles className="w-4 h-4" />
-          Generate Image
+          {generating ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Sparkles className="w-4 h-4" />
+          )}
+          {generating ? 'Generating…' : 'Generate Image'}
         </button>
       </div>
 
@@ -141,10 +163,9 @@ export default function AssetCard({
         <p className="text-xs text-accent-pink">{uploadError}</p>
       )}
 
-      <p className="text-[11px] text-slate-500 leading-relaxed">
-        Image generation will be connected later through a backend API. For now, copy the prompt
-        into Vidu (or your image tool) or upload your generated reference image.
-      </p>
+      {generateError && (
+        <p className="text-xs text-accent-pink">{generateError}</p>
+      )}
 
       {/* Notes */}
       <div className="space-y-1.5">
