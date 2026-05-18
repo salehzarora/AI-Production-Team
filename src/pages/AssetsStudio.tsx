@@ -170,6 +170,6 @@ export default function AssetsStudio() {
   );
 
   function updateOne(kind: AssetKind, assetId: string, patch: Partial<ProductionAsset>) {
-    update(updateAsset(safeProject, kind, assetId, patch));
+    update(updateAsset(safeProject!, kind, assetId, patch));
   }
 }
