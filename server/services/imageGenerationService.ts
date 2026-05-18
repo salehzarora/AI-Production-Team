@@ -1,11 +1,8 @@
-import dotenv from 'dotenv';
-
-dotenv.config();
+import OpenAI from 'openai';
 
 export interface GenerateImageOptions {
   prompt: string;
   negativePrompt?: string;
-  /** Array of base64 data URLs or public image URLs to use as style/subject references. */
   referenceImages?: string[];
 }
 
@@ -18,95 +15,101 @@ export interface GenerateImageResult {
 /**
  * Provider-agnostic image generation entry point.
  *
- * To connect a real provider:
- *   1. Copy server/.env.example → server/.env
- *   2. Set IMAGE_API_KEY and IMAGE_API_URL for your chosen provider.
- *   3. Replace the TODO block below with your provider's fetch call.
+ * Reads IMAGE_PROVIDER from env (loaded by index.ts before this is called).
  *
- * Supported providers (add your own):
- *   - Replicate  https://replicate.com/docs/reference/http
- *   - fal.ai     https://fal.ai/docs
- *   - Stability AI / DreamStudio
- *   - OpenAI DALL-E 3
+ * Supported IMAGE_PROVIDER values:
+ *   openai      — Uses the official openai SDK. Requires IMAGE_API_KEY.
+ *                 Uses IMAGE_MODEL (default: gpt-image-1).
+ *                 IMAGE_API_URL is NOT required and NOT used.
+ *   placeholder — Returns a dark SVG. No API key needed.
+ *   (empty)     — Same as placeholder.
  */
 export async function generateImage(options: GenerateImageOptions): Promise<GenerateImageResult> {
-  const apiKey = process.env.IMAGE_API_KEY;
-  const apiUrl = process.env.IMAGE_API_URL;
+  const provider = (process.env.IMAGE_PROVIDER ?? '').toLowerCase().trim();
 
-  if (!apiKey || !apiUrl) {
-    console.warn('[imageGenerationService] No provider configured — returning placeholder image.');
+  if (!provider || provider === 'placeholder') {
     return buildPlaceholder(options.prompt);
   }
 
-  // ------------------------------------------------------------------
-  // TODO: Replace the block below with your provider's API call.
-  //
-  // Example — Replicate (SDXL / Flux):
-  //
-  //   const response = await fetch('https://api.replicate.com/v1/predictions', {
-  //     method: 'POST',
-  //     headers: {
-  //       Authorization: `Token ${apiKey}`,
-  //       'Content-Type': 'application/json',
-  //     },
-  //     body: JSON.stringify({
-  //       version: 'YOUR_MODEL_VERSION_ID',
-  //       input: {
-  //         prompt: options.prompt,
-  //         negative_prompt: options.negativePrompt ?? '',
-  //         width: 1024,
-  //         height: 1024,
-  //       },
-  //     }),
-  //   });
-  //   const prediction = await response.json();
-  //   // Replicate returns a polling URL; poll until status === 'succeeded':
-  //   const imageUrl = await pollReplicate(prediction.urls.get, apiKey);
-  //   return { imageUrl, provider: 'replicate', promptUsed: options.prompt };
-  //
-  // Example — Stability AI (stable-image/generate/core):
-  //
-  //   const form = new FormData();
-  //   form.append('prompt', options.prompt);
-  //   if (options.negativePrompt) form.append('negative_prompt', options.negativePrompt);
-  //   form.append('output_format', 'jpeg');
-  //   const response = await fetch(apiUrl, {
-  //     method: 'POST',
-  //     headers: { Authorization: `Bearer ${apiKey}`, Accept: 'image/*' },
-  //     body: form,
-  //   });
-  //   const buffer = await response.arrayBuffer();
-  //   const imageUrl = `data:image/jpeg;base64,${Buffer.from(buffer).toString('base64')}`;
-  //   return { imageUrl, provider: 'stability-ai', promptUsed: options.prompt };
-  //
-  // Example — fal.ai (fal-ai/flux/schnell):
-  //
-  //   const response = await fetch(apiUrl, {
-  //     method: 'POST',
-  //     headers: { Authorization: `Key ${apiKey}`, 'Content-Type': 'application/json' },
-  //     body: JSON.stringify({ input: { prompt: options.prompt } }),
-  //   });
-  //   const data = await response.json();
-  //   return { imageUrl: data.images[0].url, provider: 'fal-ai', promptUsed: options.prompt };
-  // ------------------------------------------------------------------
+  if (provider === 'openai') {
+    return callOpenAI(options);
+  }
+
+  // TODO: add more providers here, e.g.:
+  //   if (provider === 'replicate') return callReplicate(options);
+  //   if (provider === 'stability') return callStability(options);
 
   throw new Error(
-    'IMAGE_API_KEY and IMAGE_API_URL are set but no provider implementation exists yet. ' +
-    'Add your provider\'s fetch call in server/services/imageGenerationService.ts.'
+    `Unknown IMAGE_PROVIDER="${provider}". ` +
+    'Supported: openai, placeholder. Check server/.env and restart.',
   );
 }
 
-// Returns a dark SVG data URL so the full UI flow can be exercised without a real provider.
+// ---------------------------------------------------------------------------
+// OpenAI (gpt-image-1 / dall-e-3)
+// ---------------------------------------------------------------------------
+
+async function callOpenAI(options: GenerateImageOptions): Promise<GenerateImageResult> {
+  const apiKey = process.env.IMAGE_API_KEY;
+  if (!apiKey) {
+    throw new Error('IMAGE_PROVIDER=openai but IMAGE_API_KEY is not set in server/.env.');
+  }
+
+  const model = (process.env.IMAGE_MODEL ?? 'gpt-image-1').trim();
+
+  const client = new OpenAI({ apiKey });
+
+  const response = await client.images.generate({
+    model,
+    prompt: options.prompt,
+    size: '1024x1024',
+    quality: 'auto',
+    n: 1,
+  });
+
+  const item = response.data?.[0];
+
+  if (!item) {
+    throw new Error('OpenAI returned an empty response (no image data).');
+  }
+
+  if (item.b64_json) {
+    return {
+      imageUrl: `data:image/png;base64,${item.b64_json}`,
+      provider: 'openai',
+      promptUsed: item.revised_prompt ?? options.prompt,
+    };
+  }
+
+  if (item.url) {
+    return {
+      imageUrl: item.url,
+      provider: 'openai',
+      promptUsed: item.revised_prompt ?? options.prompt,
+    };
+  }
+
+  throw new Error('OpenAI did not return an image (no b64_json or url in response).');
+}
+
+// ---------------------------------------------------------------------------
+// Placeholder — dark SVG for local UI testing without a real provider
+// ---------------------------------------------------------------------------
+
 function buildPlaceholder(prompt: string): GenerateImageResult {
   const label = prompt.length > 60 ? prompt.slice(0, 57) + '…' : prompt;
-  const escaped = label.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const escaped = label
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
   const svg = [
     '<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512">',
     '<rect width="512" height="512" fill="#0f172a"/>',
     '<rect x="1" y="1" width="510" height="510" fill="none" stroke="#334155" stroke-width="2"/>',
-    '<text x="256" y="230" font-family="monospace" font-size="13" fill="#94a3b8" text-anchor="middle">Placeholder — no provider configured</text>',
+    '<text x="256" y="230" font-family="monospace" font-size="13" fill="#94a3b8" text-anchor="middle">Placeholder — IMAGE_PROVIDER not set</text>',
     `<text x="256" y="260" font-family="monospace" font-size="10" fill="#475569" text-anchor="middle">${escaped}</text>`,
-    '<text x="256" y="290" font-family="monospace" font-size="10" fill="#1e3a5f" text-anchor="middle">Set IMAGE_API_KEY + IMAGE_API_URL in server/.env</text>',
+    '<text x="256" y="290" font-family="monospace" font-size="10" fill="#1e3a5f" text-anchor="middle">Set IMAGE_PROVIDER=openai in server/.env</text>',
     '</svg>',
   ].join('');
   const imageUrl = `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;

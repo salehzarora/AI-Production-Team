@@ -5,7 +5,10 @@
       "Bash(Select-Object -Property Name, PSIsContainer)",
       "Bash(npm install *)",
       "Bash(npx tsc *)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(npx tsx *)",
+      "Bash(kill %1)",
+      "Bash(wait)"
     ]
   }
 }
