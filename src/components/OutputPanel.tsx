@@ -2,12 +2,14 @@ import type { ReactNode } from 'react';
 import type {
   AgentId,
   AgentOutput,
+  AssetOutput,
   CharacterOutput,
   ConsistencyOutput,
   MarketingOutput,
   PromptOutput,
   SceneOutput,
   ScriptOutput,
+  ShotImageOutput,
   StoryboardOutput,
 } from '../types';
 import CopyButton from './CopyButton';
@@ -88,10 +90,14 @@ export default function OutputPanel({ agentId, output, editable, onEdit }: Props
       return <ScriptView o={output as ScriptOutput} />;
     case 'character':
       return <CharacterView o={output as CharacterOutput} />;
+    case 'asset':
+      return <AssetPlanView o={output as AssetOutput} />;
     case 'scene':
       return <SceneView o={output as SceneOutput} />;
     case 'storyboard':
       return <StoryboardView o={output as StoryboardOutput} />;
+    case 'shotImage':
+      return <ShotImageView o={output as ShotImageOutput} />;
     case 'prompt':
       return <PromptView o={output as PromptOutput} />;
     case 'consistency':
@@ -174,6 +180,57 @@ function CharacterView({ o }: { o: CharacterOutput }) {
               {c.negativePrompt}
             </code>
           </Section>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AssetPlanView({ o }: { o: AssetOutput }) {
+  return (
+    <div className="space-y-5">
+      <Section title="Production plan" copyText={o.productionPlan}>
+        <p>{o.productionPlan}</p>
+      </Section>
+      <Section title="Workflow" copyText={o.workflow.join('\n')}>
+        <ol className="list-decimal pl-5 space-y-1">
+          {o.workflow.map((w, i) => (
+            <li key={i}>{w}</li>
+          ))}
+        </ol>
+      </Section>
+      <div className="grid sm:grid-cols-3 gap-3">
+        <Field label="Characters" value={o.characterAssetsNote} />
+        <Field label="Environments" value={o.environmentAssetsNote} />
+        <Field label="Props" value={o.propAssetsNote} />
+      </div>
+      <div className="text-xs text-slate-400">
+        Planned total: <span className="text-white font-medium">{o.totalAssets}</span> asset prompts.
+        Manage them in the <span className="text-accent-blue">Assets Studio</span>.
+      </div>
+    </div>
+  );
+}
+
+function ShotImageView({ o }: { o: ShotImageOutput }) {
+  return (
+    <div className="space-y-3">
+      {o.shots.map((s) => (
+        <div key={s.shotNumber} className="card p-4 space-y-2 bg-bg-panel/40">
+          <div className="flex items-center justify-between gap-2">
+            <div className="font-semibold text-white">Shot {s.shotNumber}</div>
+            <CopyButton text={s.imagePrompt} variant="soft" />
+          </div>
+          <code className="block bg-bg-panel/70 border border-bg-border rounded-lg p-3 font-mono text-xs whitespace-pre-wrap leading-relaxed">
+            {s.imagePrompt}
+          </code>
+          <div className="grid sm:grid-cols-2 gap-3 text-xs">
+            <Field
+              label="Reference assets"
+              value={s.referenceAssets.length ? s.referenceAssets.join(' · ') : '—'}
+            />
+            <Field label="Notes" value={s.notes} />
+          </div>
         </div>
       ))}
     </div>

@@ -1,6 +1,6 @@
 # AI Production Team
 
-Turn one video idea into a complete animation production package. Seven specialist AI agents work as a connected pipeline — script, characters, scenes, storyboard, prompts, consistency, marketing — and hand the final package off to you, ready to copy into your generation tools.
+Turn one video idea into a complete animation production package — script, characters, **visual assets**, storyboard, **shot images**, Vidu prompts, consistency notes, marketing. The app manages the full asset creation workflow: every reference image you need is auto-prompted, and you can upload your generated images so they get carried through every downstream step.
 
 This is a **frontend-only MVP**. All AI outputs are **mocked** (deterministic structured data derived from your inputs). The architecture is built so a real backend can be slotted in later without rewriting the UI.
 
@@ -8,16 +8,19 @@ This is a **frontend-only MVP**. All AI outputs are **mocked** (deterministic st
 
 ## What it does
 
-1. You write a video idea, pick a platform (YouTube Shorts / TikTok / Reels), a style, and a length (15 / 30 / 60s).
-2. The pipeline runs each agent in order, passing the previous outputs forward:
+1. You write a video idea, pick a platform (YouTube Shorts / TikTok / Reels), a style, a length (15 / 30 / 60s), and a target tool (Vidu by default).
+2. The pipeline runs nine specialist agents in order, passing the previous outputs forward:
    - **Script Agent** — logline, full script, dialogue, timing notes.
-   - **Character Agent** — character bible with appearance, palette, reference + negative prompts.
-   - **Scene Agent** — locations, props, lighting, mood, camera style, environment prompt.
+   - **Character Agent** — character bible (appearance, palette, reference + negative prompts). Auto-seeds character asset prompts.
+   - **Asset Agent** — production plan + step-by-step workflow for generating reference images.
+   - **Scene Agent** — locations, props, lighting, mood, camera style, environment prompt. Auto-seeds environment + prop asset prompts.
    - **Storyboard Agent** — shot-by-shot table (angle, duration, action, emotion, notes).
-   - **Prompt Agent** — image + video prompts per shot, motion + camera movement.
+   - **Shot Image Agent** — per-shot image prompt that combines character + environment + prop references. Auto-seeds shot image assets.
+   - **Vidu Prompt Agent** — structured Vidu image-to-video prompts (9 blocks per shot when Vidu Mode is on).
    - **Consistency Agent** — character / scene / style notes, missing details, fixes.
    - **Marketing Agent** — title, description, hashtags, thumbnail prompt, hook, pinned comment.
-3. The **Final Package** page shows everything organized with Copy buttons and JSON export.
+3. The **Assets Studio** is where you manage the visual assets. Four tabs (Characters / Environments / Props / Shot Images). Each card has the prompt (copyable), an upload button, an image preview, a status badge, and a notes field.
+4. The **Final Package** page shows everything organized — Asset Library, Vidu Prompts, all sections — with Copy + Export JSON + Export TXT.
 
 Projects are saved to `localStorage` so you can close the tab and continue later.
 
@@ -135,10 +138,38 @@ The pipeline picks up the new tool automatically — Dashboard badges, project s
 
 ---
 
+## Assets Studio
+
+After the Character Agent runs, character asset prompts appear in the Studio automatically. After the Scene Agent runs, environment + prop prompts are seeded. After the Shot Image Agent runs, per-shot image prompts are seeded.
+
+For each asset card you can:
+- **Copy prompt** — paste into your image generator (Midjourney, Vidu, etc.).
+- **Upload image** — pick a local PNG/JPG. Stored inline (data URL) in localStorage.
+- **Notes** — record seed, generator, palette decisions, anything you want to remember.
+- **Status badge** updates automatically: `prompt-ready` → `uploaded` once you upload.
+
+> **localStorage note**: images are stored as data URLs in the same store as everything else. Browsers cap that at ~5 MB per origin. Large projects with many uploads will hit the limit — that's a known limitation of the frontend-only MVP. Backend storage / IndexedDB is the future fix.
+
+A **Generate Image** button exists on every card but is intentionally disabled. The card shows the line *"Image generation will be connected later through a backend API. For now, copy the prompt into Vidu or upload your generated reference image."*
+
+### The full production workflow
+
+```
+1. Generate character prompts  →  copy them or upload generated images
+2. Generate environment prompts →  copy them or upload generated images
+3. Generate prop prompts        →  copy them or upload generated images
+4. Generate shot image prompts  →  copy them or upload generated images
+5. Use the shot image + character + env + prop refs in Vidu image-to-video
+```
+
+The Asset Agent's output is a checklist of these exact steps tailored to your project's character count, style, and duration.
+
+---
+
 ## Workflow
 
 ```
-Idea → Script → Characters → Scenes → Storyboard → Prompts → Consistency → Marketing → Final Package
+Idea → Script → Characters → Assets → Scenes → Storyboard → Shot Images → Vidu Prompts → Consistency → Marketing → Final Package
 ```
 
 Each agent card supports:

@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Package, PlayCircle } from 'lucide-react';
+import { ArrowLeft, Boxes, Package, PlayCircle } from 'lucide-react';
 import { useProject } from '../hooks/useProject';
 import { AGENTS, AGENT_PIPELINE } from '../data/agents';
 import { runAgentStep } from '../services/productionAiService';
@@ -102,7 +102,11 @@ export default function Workflow() {
             {project.platform} · {project.style} · {project.duration}s
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          <Link to={`/project/${project.id}/assets`} className="btn-ghost">
+            <Boxes className="w-4 h-4" />
+            Assets Studio
+          </Link>
           {allDone ? (
             <Link to={`/project/${project.id}/final`} className="btn-primary">
               <Package className="w-4 h-4" />

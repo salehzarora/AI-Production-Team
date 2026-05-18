@@ -34,6 +34,7 @@
 import type {
   Agent,
   AgentOutput,
+  AssetOutput,
   CameraBlock,
   Character,
   CharacterOutput,
@@ -50,6 +51,7 @@ import type {
   PropsBlock,
   SceneOutput,
   ScriptOutput,
+  ShotImageOutput,
   StoryboardShot,
   StoryboardOutput,
 } from '../types';
@@ -79,10 +81,19 @@ export async function runAgentStep(
       return buildScript(project);
     case 'character':
       return buildCharacters(project, previousOutputs.script as ScriptOutput | undefined);
+    case 'asset':
+      return buildAssetPlan(project, previousOutputs.character as CharacterOutput | undefined);
     case 'scene':
       return buildScenes(project);
     case 'storyboard':
       return buildStoryboard(project, previousOutputs.script as ScriptOutput | undefined);
+    case 'shotImage':
+      return buildShotImages(
+        project,
+        previousOutputs.storyboard as StoryboardOutput | undefined,
+        previousOutputs.character as CharacterOutput | undefined,
+        previousOutputs.scene as SceneOutput | undefined
+      );
     case 'prompt':
       return buildPrompts(
         project,
@@ -95,6 +106,96 @@ export async function runAgentStep(
     case 'marketing':
       return buildMarketing(project, previousOutputs.script as ScriptOutput | undefined);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Asset Agent + Shot Image Agent generators
+// ---------------------------------------------------------------------------
+
+function buildAssetPlan(
+  project: ProductionProject,
+  characters: CharacterOutput | undefined
+): AssetOutput {
+  const numChars = characters?.characters.length ?? 0;
+  const isVidu = (project.targetTool ?? 'general') === 'vidu';
+  return {
+    productionPlan:
+      `For a ${project.duration}s ${project.style} short, you'll need ${numChars} character reference image(s), ` +
+      `~3 environment plates, ~3 prop references, and one image per storyboard shot. ` +
+      `Generate them in this order so each shot can reuse stable references.`,
+    workflow: [
+      'Step 1 — Generate the CHARACTER reference images first. Lock seed, save the PNGs.',
+      'Step 2 — Generate the ENVIRONMENT plates (one per location). These get reused across every shot in that location.',
+      'Step 3 — Generate the PROP references for any object that recurs.',
+      'Step 4 — Run the Storyboard + Shot Image agents.',
+      'Step 5 — For each shot, generate the first-frame image using the character + environment + prop references.',
+      isVidu
+        ? 'Step 6 — Upload the first frame and references into Vidu, paste the Vidu video prompt, render.'
+        : 'Step 6 — Use the first frame in your image-to-video tool of choice with the shot video prompt.',
+    ],
+    characterAssetsNote:
+      `${numChars} character(s) detected. Each needs a clean reference sheet (front + 3/4 + back) ` +
+      `with locked palette. Open Assets Studio → Characters to copy prompts or upload your generated images.`,
+    environmentAssetsNote:
+      `Environment assets will be auto-seeded after the Scene Agent runs. Plan to generate one plate ` +
+      `per unique location and reuse it across every shot in that location.`,
+    propAssetsNote:
+      `Prop assets will be auto-seeded after the Scene Agent runs. Generate a reference for any prop ` +
+      `that appears in more than one shot — otherwise Vidu will reinterpret it shot-to-shot.`,
+    totalAssets: numChars + 3 + 3,
+  };
+}
+
+function buildShotImages(
+  project: ProductionProject,
+  storyboard: StoryboardOutput | undefined,
+  characters: CharacterOutput | undefined,
+  scenes: SceneOutput | undefined
+): ShotImageOutput {
+  const shots = storyboard?.shots ?? [];
+  const hero = characters?.characters[0];
+  const sidekick = characters?.characters[1];
+  const propsList = scenes?.props ?? [];
+  const envPrompt = scenes?.environmentPrompt ?? '';
+  const lighting = scenes?.lighting ?? 'soft cinematic key light';
+  return {
+    shots: shots.map((s, idx) => {
+      const refs: string[] = [];
+      if (hero) refs.push(hero.name);
+      // Sidekick in middle + final
+      if (sidekick && (idx === Math.floor(shots.length / 2) || idx === shots.length - 1)) {
+        refs.push(sidekick.name);
+      }
+      const mainLocation = scenes?.locations[0] ?? 'primary location';
+      refs.push(mainLocation);
+      const prop = propsList.length ? propsList[idx % propsList.length] : null;
+      if (prop) refs.push(prop);
+
+      const imagePrompt = [
+        `${project.style}, ${s.cameraAngle.toLowerCase()}`,
+        `${refs.slice(0, refs.length - (prop ? 2 : 1)).join(' and ') || 'hero'} in ${mainLocation}`,
+        `action: ${s.action.toLowerCase()}, expression: ${s.characterEmotion}`,
+        prop ? `featured prop: ${prop}` : '',
+        `environment reference: ${envPrompt}`,
+        `lighting: ${lighting}`,
+        `9:16 vertical, sharp focus, cinematic composition, high detail`,
+      ]
+        .filter(Boolean)
+        .join('. ');
+
+      return {
+        shotNumber: s.shotNumber,
+        imagePrompt,
+        referenceAssets: refs,
+        notes:
+          idx === 0
+            ? 'First shot — this image establishes the look. Save it and reuse as a reference plate for later shots.'
+            : idx === shots.length - 1
+              ? 'Final shot — frame it for a clean loop back to shot 1.'
+              : 'Reuse the character + environment references from earlier shots. Lock the same seed.',
+      };
+    }),
+  };
 }
 
 // ============================================================================

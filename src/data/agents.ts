@@ -32,6 +32,17 @@ export const AGENTS: Record<AgentId, Agent> = {
     ],
     color: 'violet',
   },
+  asset: {
+    id: 'asset',
+    name: 'Asset Agent',
+    role: 'Plans the visual asset production',
+    description:
+      'Produces a structured plan for generating every visual asset the production needs — character reference images, environment plates, prop references — and explains the order in which to make them.',
+    systemPrompt:
+      'You are a production manager for AI video assets. Review the character bible (and later the scene bible) and produce an actionable plan for creating reference images: which assets to generate first, what each prompt should contain, and how to keep them consistent.',
+    outputSchema: ['productionPlan', 'workflow', 'characterAssetsNote', 'environmentAssetsNote', 'propAssetsNote', 'totalAssets'],
+    color: 'gold',
+  },
   scene: {
     id: 'scene',
     name: 'Scene Agent',
@@ -54,14 +65,25 @@ export const AGENTS: Record<AgentId, Agent> = {
     outputSchema: ['shotNumber', 'duration', 'cameraAngle', 'action', 'characterEmotion', 'visualNotes'],
     color: 'lime',
   },
+  shotImage: {
+    id: 'shotImage',
+    name: 'Shot Image Agent',
+    role: 'Writes per-shot image prompts',
+    description:
+      'For every storyboard shot, builds the first-frame image prompt that combines character + environment + prop references into a single ready-to-render prompt.',
+    systemPrompt:
+      'You are a shot image designer. For every shot, produce a complete image generation prompt that references the relevant character, environment, and prop assets so the rendered frame can be used as the first frame in an image-to-video pipeline.',
+    outputSchema: ['shotNumber', 'imagePrompt', 'referenceAssets', 'notes'],
+    color: 'cyan',
+  },
   prompt: {
     id: 'prompt',
-    name: 'Prompt Agent',
-    role: 'Writes generation prompts',
+    name: 'Vidu Prompt Agent',
+    role: 'Writes Vidu image-to-video prompts',
     description:
-      'Produces ready-to-copy image and video prompts for tools like Midjourney, Runway, Kling, Sora, Veo.',
+      'Produces structured per-shot Vidu prompts: character references, environment, props, motion, camera, negative prompt, continuity notes.',
     systemPrompt:
-      'You are a prompt engineer for image/video generation. For every shot, produce an image prompt, a video prompt, a motion description, a camera movement, and references for consistency.',
+      'You are a prompt engineer for Vidu image-to-video. For every shot, produce a structured Vidu production block: character references, environment, props, main image prompt, video prompt, motion, camera, negative prompt, continuity.',
     outputSchema: [
       'imagePrompt',
       'videoPrompt',
@@ -106,8 +128,10 @@ export const AGENTS: Record<AgentId, Agent> = {
 export const AGENT_PIPELINE: AgentId[] = [
   'script',
   'character',
+  'asset',
   'scene',
   'storyboard',
+  'shotImage',
   'prompt',
   'consistency',
   'marketing',
@@ -117,9 +141,11 @@ export const PIPELINE_LABELS = [
   'Idea',
   'Script',
   'Characters',
+  'Assets',
   'Scenes',
   'Storyboard',
-  'Prompts',
+  'Shot Images',
+  'Vidu Prompts',
   'Consistency',
   'Marketing',
   'Final Package',

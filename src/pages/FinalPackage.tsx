@@ -1,23 +1,30 @@
 import type { ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, Download, FileText, Sparkles, Wand2 } from 'lucide-react';
+import { ArrowLeft, Boxes, Download, FileText, Sparkles, Wand2 } from 'lucide-react';
 import { useProject } from '../hooks/useProject';
 import { AGENTS } from '../data/agents';
 import OutputPanel from '../components/OutputPanel';
 import CopyButton from '../components/CopyButton';
 import type {
   AgentId,
+  CharacterAsset,
   CharacterOutput,
   ConsistencyOutput,
+  EnvironmentAsset,
   MarketingOutput,
+  ProductionAsset,
+  ProductionAssets,
   ProductionProject,
   PromptOutput,
   PromptShot,
+  PropAsset,
   SceneOutput,
   ScriptOutput,
+  ShotImageAsset,
   StoryboardOutput,
 } from '../types';
 import { TARGET_TOOL_LABELS } from '../types';
+import { ensureAssets } from '../utils/project';
 
 export default function FinalPackage() {
   const { id } = useParams();
@@ -39,6 +46,9 @@ export default function FinalPackage() {
   const isVidu = targetTool === 'vidu';
   const promptOutput = project.finalPackage.prompts;
   const fileBase = project.title.replace(/[^a-z0-9]+/gi, '-').toLowerCase() || 'production';
+  const assets = (ensureAssets(project).assets) ?? { characters: [], environments: [], props: [], shotImages: [] };
+  const hasAnyAssets =
+    assets.characters.length + assets.environments.length + assets.props.length + assets.shotImages.length > 0;
 
   function downloadBlob(content: string, mime: string, ext: string) {
     if (!project) return;
@@ -66,9 +76,11 @@ export default function FinalPackage() {
   const sections: { agentId: AgentId; title: string }[] = [
     { agentId: 'script', title: 'Script' },
     { agentId: 'character', title: 'Character Bible' },
+    { agentId: 'asset', title: 'Asset Production Plan' },
     { agentId: 'scene', title: 'Scene Bible' },
     { agentId: 'storyboard', title: 'Storyboard' },
-    { agentId: 'prompt', title: 'Prompts by Shot' },
+    { agentId: 'shotImage', title: 'Shot Image Prompts' },
+    { agentId: 'prompt', title: 'Vidu Prompts by Shot' },
     { agentId: 'consistency', title: 'Consistency Checklist' },
     { agentId: 'marketing', title: 'Marketing Package' },
   ];
@@ -105,6 +117,10 @@ export default function FinalPackage() {
           </div>
         </div>
         <div className="flex gap-2 flex-wrap">
+          <Link to={`/project/${project.id}/assets`} className="btn-ghost">
+            <Boxes className="w-4 h-4" />
+            Assets Studio
+          </Link>
           {promptOutput && promptOutput.shots.length > 0 && (
             <CopyButton
               text={allVideoPrompts}
@@ -130,6 +146,25 @@ export default function FinalPackage() {
         </div>
         <CopyButton text={project.idea} variant="soft" />
       </div>
+
+      {/* Asset Library — shows uploaded reference images grouped by kind */}
+      {hasAnyAssets && (
+        <section className="card p-5 space-y-4">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <Boxes className="w-5 h-5 text-accent-gold" />
+              Asset Library
+            </h2>
+            <Link to={`/project/${project.id}/assets`} className="btn-soft">
+              <Boxes className="w-4 h-4" /> Open Assets Studio
+            </Link>
+          </div>
+          <AssetGroup title="Characters" items={assets.characters} />
+          <AssetGroup title="Environments" items={assets.environments} />
+          <AssetGroup title="Props" items={assets.props} />
+          <AssetGroup title="Shot Images" items={assets.shotImages} />
+        </section>
+      )}
 
       {/* Vidu Prompts dedicated section — clean shot cards */}
       {isVidu && promptOutput && promptOutput.shots.length > 0 && (
@@ -465,6 +500,52 @@ function buildFullShotText(s: PromptShot): string {
 }
 
 // ----------------------------------------------------------------------------
+// Asset Library — compact grid grouped by asset kind.
+// ----------------------------------------------------------------------------
+
+function AssetGroup({
+  title,
+  items,
+}: {
+  title: string;
+  items: (CharacterAsset | EnvironmentAsset | PropAsset | ShotImageAsset)[];
+}) {
+  if (items.length === 0) return null;
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="section-title">
+          {title} <span className="text-slate-500">({items.length})</span>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+        {items.map((a) => (
+          <AssetTile key={a.id} asset={a} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AssetTile({ asset }: { asset: ProductionAsset }) {
+  return (
+    <div className="card p-2 space-y-2 bg-bg-panel/40">
+      <div className="aspect-square rounded-lg overflow-hidden bg-bg-panel border border-bg-border grid place-items-center">
+        {asset.imageUrl ? (
+          <img src={asset.imageUrl} alt={asset.name} className="w-full h-full object-cover" />
+        ) : (
+          <span className="text-[10px] text-slate-500 px-2 text-center">No image yet</span>
+        )}
+      </div>
+      <div className="px-1">
+        <div className="text-xs font-medium text-white truncate">{asset.name}</div>
+        <div className="text-[10px] text-slate-500 truncate">{asset.status}</div>
+      </div>
+    </div>
+  );
+}
+
+// ----------------------------------------------------------------------------
 // TXT export — single file containing everything the user needs to upload.
 // ----------------------------------------------------------------------------
 
@@ -489,16 +570,86 @@ function buildTxtExport(project: ProductionProject): string {
   lines.push(hr, '  ORIGINAL IDEA', hr);
   lines.push(project.idea, '');
 
+  const projectAssets = project.assets;
   if (fp.script) lines.push(...scriptToTxt(fp.script));
   if (fp.characters) lines.push(...charactersToTxt(fp.characters));
+  if (projectAssets) lines.push(...assetsToTxt(projectAssets));
   if (fp.scenes) lines.push(...scenesToTxt(fp.scenes));
   if (fp.storyboard) lines.push(...storyboardToTxt(fp.storyboard));
+  if (projectAssets && projectAssets.shotImages.length > 0) {
+    lines.push(...shotImagePromptsToTxt(projectAssets));
+  }
   if (fp.prompts) lines.push(...promptsToTxt(fp.prompts));
   if (fp.consistency) lines.push(...consistencyToTxt(fp.consistency));
   if (fp.marketing) lines.push(...marketingToTxt(fp.marketing));
 
   lines.push(hr, '  END OF PACKAGE', hr);
   return lines.join('\n');
+
+  function assetsToTxt(a: ProductionAssets): string[] {
+    const out: string[] = [];
+    if (a.characters.length) {
+      out.push(hr, '  CHARACTER ASSET PROMPTS', hr);
+      a.characters.forEach((c) => {
+        out.push(
+          sub,
+          `Name:        ${c.name}`,
+          `Status:      ${c.status}${c.imageUrl ? ' (image attached)' : ''}`,
+          `Role:        ${c.roleInStory}`,
+          `Visual:      ${c.visualDescription}`,
+          `Prompt:      ${c.prompt}`,
+          c.negativePrompt ? `Negative:    ${c.negativePrompt}` : '',
+          c.notes ? `Notes:       ${c.notes}` : '',
+          ''
+        );
+      });
+    }
+    if (a.environments.length) {
+      out.push(hr, '  ENVIRONMENT ASSET PROMPTS', hr);
+      a.environments.forEach((e) => {
+        out.push(
+          sub,
+          `Name:        ${e.name}`,
+          `Status:      ${e.status}${e.imageUrl ? ' (image attached)' : ''}`,
+          `Description: ${e.description}`,
+          `Prompt:      ${e.prompt}`,
+          e.notes ? `Notes:       ${e.notes}` : '',
+          ''
+        );
+      });
+    }
+    if (a.props.length) {
+      out.push(hr, '  PROP ASSET PROMPTS', hr);
+      a.props.forEach((p) => {
+        out.push(
+          sub,
+          `Name:        ${p.name}`,
+          `Status:      ${p.status}${p.imageUrl ? ' (image attached)' : ''}`,
+          `Description: ${p.description}`,
+          `Prompt:      ${p.prompt}`,
+          p.notes ? `Notes:       ${p.notes}` : '',
+          ''
+        );
+      });
+    }
+    return out.filter((l) => l !== '');
+  }
+
+  function shotImagePromptsToTxt(a: ProductionAssets): string[] {
+    const out: string[] = [hr, '  SHOT IMAGE PROMPTS', hr];
+    a.shotImages.forEach((s) => {
+      out.push(
+        sub,
+        `Shot ${s.shotNumber} — ${s.name}`,
+        `Status:      ${s.status}${s.imageUrl ? ' (image attached)' : ''}`,
+        `References:  ${s.referenceAssets.join(', ') || '—'}`,
+        `Prompt:      ${s.prompt}`,
+        s.notes ? `Notes:       ${s.notes}` : '',
+        ''
+      );
+    });
+    return out;
+  }
 
   function scriptToTxt(s: ScriptOutput): string[] {
     return [

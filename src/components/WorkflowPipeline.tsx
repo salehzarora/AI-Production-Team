@@ -1,21 +1,30 @@
-import { PIPELINE_LABELS } from '../data/agents';
+import { AGENT_PIPELINE, PIPELINE_LABELS } from '../data/agents';
 
 interface Props {
-  /** 0 = Idea, 1 = Script, ... 8 = Final Package. */
+  /** Index into AGENT_PIPELINE of the current agent (0..AGENT_PIPELINE.length-1). */
   currentIndex: number;
-  completedSteps: number; // number of completed agents (0..7)
+  /** Number of agents that have status 'complete'. */
+  completedSteps: number;
 }
 
 export default function WorkflowPipeline({ currentIndex, completedSteps }: Props) {
+  const totalAgents = AGENT_PIPELINE.length;
+  const lastLabelIndex = PIPELINE_LABELS.length - 1; // Final Package
   return (
     <div className="card p-4 overflow-x-auto">
       <div className="flex items-center gap-2 min-w-max">
         {PIPELINE_LABELS.map((label, i) => {
-          // step indices: 0=Idea, 1..7=agents, 8=Final Package
-          const isAgentStep = i >= 1 && i <= 7;
+          // Layout: 0 = Idea, 1..totalAgents = agents, lastLabelIndex = Final Package.
+          const isIdea = i === 0;
+          const isFinal = i === lastLabelIndex;
+          const isAgentStep = !isIdea && !isFinal;
           const agentIndex = i - 1;
-          const isDone = isAgentStep ? agentIndex < completedSteps : i === 8 ? completedSteps === 7 : true;
-          const isActive = i === currentIndex + 1; // current agent
+          const isDone = isIdea
+            ? true
+            : isFinal
+              ? completedSteps === totalAgents
+              : isAgentStep && agentIndex < completedSteps;
+          const isActive = isAgentStep && i === currentIndex + 1;
           return (
             <div key={label} className="flex items-center gap-2">
               <div
@@ -31,11 +40,7 @@ export default function WorkflowPipeline({ currentIndex, completedSteps }: Props
                 {label}
               </div>
               {i < PIPELINE_LABELS.length - 1 && (
-                <div
-                  className={`w-6 h-px ${
-                    isDone ? 'bg-accent-lime/60' : 'bg-bg-border'
-                  }`}
-                />
+                <div className={`w-6 h-px ${isDone ? 'bg-accent-lime/60' : 'bg-bg-border'}`} />
               )}
             </div>
           );

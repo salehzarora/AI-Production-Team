@@ -34,8 +34,10 @@ export const TARGET_TOOL_LABELS: Record<TargetTool, string> = {
 export type AgentId =
   | 'script'
   | 'character'
+  | 'asset'
   | 'scene'
   | 'storyboard'
+  | 'shotImage'
   | 'prompt'
   | 'consistency'
   | 'marketing';
@@ -205,11 +207,87 @@ export interface MarketingOutput {
   pinnedComment: string;
 }
 
+// ============================================================================
+// Asset System — characters, environments, props, shot images.
+// The pipeline auto-seeds these from upstream agent outputs; the user manages
+// them in the Assets Studio page (copy prompts, upload generated images).
+// ============================================================================
+
+export type AssetStatus = 'missing' | 'prompt-ready' | 'uploaded' | 'generated';
+
+/** Base shape shared by every asset. */
+export interface ProductionAsset {
+  id: string;
+  name: string;
+  /** The prompt to use in an image generator. */
+  prompt: string;
+  /** Negative prompt, when relevant. */
+  negativePrompt?: string;
+  /** Inline image (data URL) once the user uploads or generates one. */
+  imageUrl?: string;
+  status: AssetStatus;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CharacterAsset extends ProductionAsset {
+  kind: 'character';
+  roleInStory: string;
+  visualDescription: string;
+}
+
+export interface EnvironmentAsset extends ProductionAsset {
+  kind: 'environment';
+  description: string;
+}
+
+export interface PropAsset extends ProductionAsset {
+  kind: 'prop';
+  description: string;
+}
+
+export interface ShotImageAsset extends ProductionAsset {
+  kind: 'shotImage';
+  shotNumber: number;
+  /** Names of the character/environment/prop assets used as references. */
+  referenceAssets: string[];
+}
+
+export interface ProductionAssets {
+  characters: CharacterAsset[];
+  environments: EnvironmentAsset[];
+  props: PropAsset[];
+  shotImages: ShotImageAsset[];
+}
+
+// ---- Asset Agent output (high-level production plan) ----
+export interface AssetOutput {
+  productionPlan: string;
+  workflow: string[];
+  characterAssetsNote: string;
+  environmentAssetsNote: string;
+  propAssetsNote: string;
+  totalAssets: number;
+}
+
+// ---- Shot Image Agent output (per-shot image prompt summary) ----
+export interface ShotImageOutput {
+  shots: {
+    shotNumber: number;
+    imagePrompt: string;
+    referenceAssets: string[];
+    notes: string;
+  }[];
+}
+
 export type AgentOutput =
   | ScriptOutput
   | CharacterOutput
+  | AssetOutput
   | SceneOutput
   | StoryboardOutput
+  | ShotImageOutput
   | PromptOutput
   | ConsistencyOutput
   | MarketingOutput;
@@ -232,8 +310,10 @@ export interface FinalPackage {
   idea: string;
   script: ScriptOutput | null;
   characters: CharacterOutput | null;
+  assetPlan: AssetOutput | null;
   scenes: SceneOutput | null;
   storyboard: StoryboardOutput | null;
+  shotImages: ShotImageOutput | null;
   prompts: PromptOutput | null;
   consistency: ConsistencyOutput | null;
   marketing: MarketingOutput | null;
@@ -254,6 +334,8 @@ export interface ProductionProject {
   currentStep: number;
   steps: WorkflowStep[];
   finalPackage: FinalPackage;
+  /** Optional for back-compat with old saved projects. New projects always initialize this. */
+  assets?: ProductionAssets;
 }
 
 /** Map of agent id -> output. Used when running an agent so it can see previous results. */
