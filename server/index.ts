@@ -14,7 +14,11 @@ app.use(express.json({ limit: '10mb' }));
 app.use('/api/images', imageRoutes);
 
 app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    requiresAccessKey: Boolean(process.env.APP_ACCESS_KEY),
+  });
 });
 
 app.listen(PORT, () => {

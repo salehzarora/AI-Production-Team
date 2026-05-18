@@ -19,30 +19,43 @@ export interface GenerateImageResponse {
   promptUsed: string;
 }
 
-export async function generateImageViaBackend(req: GenerateImageRequest): Promise<GenerateImageResponse> {
-  const res = await fetch(`${BACKEND_URL}/api/images/generate`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(req),
-  });
-
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({})) as { error?: string };
-    throw new Error(body.error ?? `Server error ${res.status}`);
-  }
-
-  return res.json() as Promise<GenerateImageResponse>;
+export interface BackendInfo {
+  online: boolean;
+  requiresAccessKey: boolean;
 }
 
-export async function checkBackendHealth(): Promise<boolean> {
+export async function getBackendInfo(): Promise<BackendInfo> {
   try {
     const res = await fetch(`${BACKEND_URL}/api/health`, {
       signal: AbortSignal.timeout(3000),
     });
-    return res.ok;
+    if (!res.ok) return { online: false, requiresAccessKey: false };
+    const data = (await res.json()) as { requiresAccessKey?: boolean };
+    return { online: true, requiresAccessKey: Boolean(data.requiresAccessKey) };
   } catch {
-    return false;
+    return { online: false, requiresAccessKey: false };
   }
+}
+
+export async function generateImageViaBackend(
+  req: GenerateImageRequest,
+  accessKey?: string,
+): Promise<GenerateImageResponse> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (accessKey) headers['x-app-access-key'] = accessKey;
+
+  const res = await fetch(`${BACKEND_URL}/api/images/generate`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(req),
+  });
+
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `Server error ${res.status}`);
+  }
+
+  return res.json() as Promise<GenerateImageResponse>;
 }
 
 export { BACKEND_URL };

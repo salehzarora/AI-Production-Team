@@ -1,10 +1,22 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, Boxes, Image as ImageIcon, MapPin, Users, Package, Wifi, WifiOff } from 'lucide-react';
+import {
+  ArrowLeft,
+  Boxes,
+  Image as ImageIcon,
+  KeyRound,
+  MapPin,
+  Package,
+  Users,
+  Wifi,
+  WifiOff,
+} from 'lucide-react';
 import { useProject } from '../hooks/useProject';
+import { useAccessKey } from '../hooks/useAccessKey';
 import { ensureAssets, updateAsset } from '../utils/project';
 import AssetCard from '../components/AssetCard';
-import { generateImageViaBackend, checkBackendHealth, BACKEND_URL } from '../services/imageApi';
+import { generateImageViaBackend, getBackendInfo, BACKEND_URL } from '../services/imageApi';
+import type { BackendInfo } from '../services/imageApi';
 import type { AssetKind } from '../utils/project';
 import type { ProductionAsset, ShotImageAsset } from '../types';
 
@@ -28,16 +40,17 @@ export default function AssetsStudio() {
   const { id } = useParams();
   const { project, loading, update } = useProject(id);
   const [tab, setTab] = useState<Tab>('characters');
-  const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
+  const [backendInfo, setBackendInfo] = useState<BackendInfo | null>(null);
+  const [keyInput, setKeyInput] = useState('');
+  const { accessKey, setAccessKey, clearAccessKey } = useAccessKey();
 
   const safeProject = useMemo(
     () => (project ? ensureAssets(project) : null),
-    [project]
+    [project],
   );
 
-  // Check backend health once on mount
   useEffect(() => {
-    checkBackendHealth().then(setBackendOnline);
+    getBackendInfo().then(setBackendInfo);
   }, []);
 
   if (loading) return <div className="text-slate-400">Loading...</div>;
@@ -60,10 +73,15 @@ export default function AssetsStudio() {
     props: assets.props.length,
     shotImages: assets.shotImages.length,
   };
-  const totalAssets = counts.characters + counts.environments + counts.props + counts.shotImages;
+  const totalAssets =
+    counts.characters + counts.environments + counts.props + counts.shotImages;
+
+  // Generate button is active when: backend online AND (no key required OR key is saved)
+  const canGenerate =
+    backendInfo?.online === true &&
+    (!backendInfo.requiresAccessKey || Boolean(accessKey));
 
   async function handleGenerate(kind: AssetKind, asset: ProductionAsset) {
-    // For shot images, collect uploaded reference images from the referenced assets.
     const referenceImages: string[] = [];
     if (kind === 'shotImages') {
       const shotAsset = asset as ShotImageAsset;
@@ -76,21 +94,30 @@ export default function AssetsStudio() {
       }
     }
 
-    const result = await generateImageViaBackend({
-      projectId: safeProject!.id,
-      assetKind: KIND_PARAM[kind],
-      assetId: asset.id,
-      prompt: asset.prompt,
-      negativePrompt: asset.negativePrompt,
-      notes: asset.notes,
-      referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
-    });
+    const result = await generateImageViaBackend(
+      {
+        projectId: safeProject!.id,
+        assetKind: KIND_PARAM[kind],
+        assetId: asset.id,
+        prompt: asset.prompt,
+        negativePrompt: asset.negativePrompt,
+        notes: asset.notes,
+        referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
+      },
+      accessKey || undefined,
+    );
 
     updateOne(kind, asset.id, {
       imageUrl: result.imageUrl,
       status: 'generated',
       updatedAt: new Date().toISOString(),
     });
+  }
+
+  function handleKeySubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setAccessKey(keyInput);
+    setKeyInput('');
   }
 
   return (
@@ -112,12 +139,13 @@ export default function AssetsStudio() {
           </div>
         </div>
 
-        {/* Backend connection info */}
-        <div className="card p-3 flex flex-col gap-1 min-w-[220px]">
+        {/* Backend connection + access key card */}
+        <div className="card p-3 flex flex-col gap-2 min-w-[240px]">
+          {/* Status row */}
           <div className="flex items-center gap-2 text-xs font-medium">
-            {backendOnline === null ? (
+            {backendInfo === null ? (
               <span className="text-slate-400">Checking backend…</span>
-            ) : backendOnline ? (
+            ) : backendInfo.online ? (
               <>
                 <Wifi className="w-3.5 h-3.5 text-accent-lime" />
                 <span className="text-accent-lime">Backend online</span>
@@ -129,8 +157,53 @@ export default function AssetsStudio() {
               </>
             )}
           </div>
+
           <div className="text-[10px] text-slate-500 font-mono truncate">{BACKEND_URL}</div>
           <div className="text-[10px] text-slate-500">API keys are stored only in the backend.</div>
+
+          {/* Access key section — only shown when the backend requires one */}
+          {backendInfo?.online && backendInfo.requiresAccessKey && (
+            <div className="border-t border-bg-border pt-2 space-y-1.5">
+              <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
+                <KeyRound className="w-3 h-3" />
+                Access key
+              </div>
+              {accessKey ? (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] text-accent-lime font-medium">Key saved ✓</span>
+                  <button
+                    onClick={clearAccessKey}
+                    className="text-[10px] text-slate-500 hover:text-white underline"
+                  >
+                    Change
+                  </button>
+                </div>
+              ) : (
+                <form onSubmit={handleKeySubmit} className="flex gap-1">
+                  <input
+                    type="password"
+                    value={keyInput}
+                    onChange={(e) => setKeyInput(e.target.value)}
+                    placeholder="Enter access key"
+                    className="pill-input text-xs flex-1 py-1"
+                    autoComplete="off"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!keyInput.trim()}
+                    className="btn-soft text-xs px-2 py-1"
+                  >
+                    Save
+                  </button>
+                </form>
+              )}
+              {backendInfo.requiresAccessKey && !accessKey && (
+                <p className="text-[10px] text-accent-gold">
+                  Enter the access key to enable image generation.
+                </p>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -162,9 +235,7 @@ export default function AssetsStudio() {
             >
               <Icon className="w-4 h-4" />
               {t.label}
-              <span className="badge border-bg-border text-slate-400 ml-1">
-                {counts[t.id]}
-              </span>
+              <span className="badge border-bg-border text-slate-400 ml-1">{counts[t.id]}</span>
             </button>
           );
         })}
@@ -173,12 +244,15 @@ export default function AssetsStudio() {
       {/* Asset grid */}
       {counts[tab] === 0 ? (
         <div className="card p-10 text-center">
-          <p className="text-slate-300">No {TABS.find((t) => t.id === tab)?.label.toLowerCase()} yet.</p>
+          <p className="text-slate-300">
+            No {TABS.find((t) => t.id === tab)?.label.toLowerCase()} yet.
+          </p>
           <p className="text-sm text-slate-500 mt-1">
             {tab === 'characters' && 'Run the Character Agent to generate character asset prompts.'}
             {tab === 'environments' && 'Run the Scene Agent to generate environment plates.'}
             {tab === 'props' && 'Run the Scene Agent to generate prop references.'}
-            {tab === 'shotImages' && 'Run the Shot Image Agent (after the Storyboard Agent) to generate per-shot image prompts.'}
+            {tab === 'shotImages' &&
+              'Run the Shot Image Agent (after the Storyboard Agent) to generate per-shot image prompts.'}
           </p>
           <Link to={`/project/${safeProject.id}`} className="btn-ghost mt-4 inline-flex">
             Open workflow
@@ -192,10 +266,14 @@ export default function AssetsStudio() {
                 key={a.id}
                 asset={a}
                 subtitle={a.roleInStory}
-                onImageUploaded={(dataUrl) => updateOne('characters', a.id, { imageUrl: dataUrl, status: 'uploaded' })}
-                onImageCleared={() => updateOne('characters', a.id, { imageUrl: undefined, status: 'prompt-ready' })}
+                onImageUploaded={(dataUrl) =>
+                  updateOne('characters', a.id, { imageUrl: dataUrl, status: 'uploaded' })
+                }
+                onImageCleared={() =>
+                  updateOne('characters', a.id, { imageUrl: undefined, status: 'prompt-ready' })
+                }
                 onNotesChanged={(notes) => updateOne('characters', a.id, { notes })}
-                onGenerate={backendOnline ? () => handleGenerate('characters', a) : undefined}
+                onGenerate={canGenerate ? () => handleGenerate('characters', a) : undefined}
               />
             ))}
           {tab === 'environments' &&
@@ -204,10 +282,14 @@ export default function AssetsStudio() {
                 key={a.id}
                 asset={a}
                 subtitle={a.description}
-                onImageUploaded={(dataUrl) => updateOne('environments', a.id, { imageUrl: dataUrl, status: 'uploaded' })}
-                onImageCleared={() => updateOne('environments', a.id, { imageUrl: undefined, status: 'prompt-ready' })}
+                onImageUploaded={(dataUrl) =>
+                  updateOne('environments', a.id, { imageUrl: dataUrl, status: 'uploaded' })
+                }
+                onImageCleared={() =>
+                  updateOne('environments', a.id, { imageUrl: undefined, status: 'prompt-ready' })
+                }
                 onNotesChanged={(notes) => updateOne('environments', a.id, { notes })}
-                onGenerate={backendOnline ? () => handleGenerate('environments', a) : undefined}
+                onGenerate={canGenerate ? () => handleGenerate('environments', a) : undefined}
               />
             ))}
           {tab === 'props' &&
@@ -216,10 +298,14 @@ export default function AssetsStudio() {
                 key={a.id}
                 asset={a}
                 subtitle={a.description}
-                onImageUploaded={(dataUrl) => updateOne('props', a.id, { imageUrl: dataUrl, status: 'uploaded' })}
-                onImageCleared={() => updateOne('props', a.id, { imageUrl: undefined, status: 'prompt-ready' })}
+                onImageUploaded={(dataUrl) =>
+                  updateOne('props', a.id, { imageUrl: dataUrl, status: 'uploaded' })
+                }
+                onImageCleared={() =>
+                  updateOne('props', a.id, { imageUrl: undefined, status: 'prompt-ready' })
+                }
                 onNotesChanged={(notes) => updateOne('props', a.id, { notes })}
-                onGenerate={backendOnline ? () => handleGenerate('props', a) : undefined}
+                onGenerate={canGenerate ? () => handleGenerate('props', a) : undefined}
               />
             ))}
           {tab === 'shotImages' &&
@@ -228,10 +314,14 @@ export default function AssetsStudio() {
                 key={a.id}
                 asset={a}
                 subtitle={`Shot ${a.shotNumber} · refs: ${a.referenceAssets.join(', ') || '—'}`}
-                onImageUploaded={(dataUrl) => updateOne('shotImages', a.id, { imageUrl: dataUrl, status: 'uploaded' })}
-                onImageCleared={() => updateOne('shotImages', a.id, { imageUrl: undefined, status: 'prompt-ready' })}
+                onImageUploaded={(dataUrl) =>
+                  updateOne('shotImages', a.id, { imageUrl: dataUrl, status: 'uploaded' })
+                }
+                onImageCleared={() =>
+                  updateOne('shotImages', a.id, { imageUrl: undefined, status: 'prompt-ready' })
+                }
                 onNotesChanged={(notes) => updateOne('shotImages', a.id, { notes })}
-                onGenerate={backendOnline ? () => handleGenerate('shotImages', a) : undefined}
+                onGenerate={canGenerate ? () => handleGenerate('shotImages', a) : undefined}
               />
             ))}
         </div>

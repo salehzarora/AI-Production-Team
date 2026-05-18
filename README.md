@@ -58,13 +58,16 @@ The backend starts at http://localhost:3001.
 
 #### Required environment variables
 
-Copy `server/.env.example` → `server/.env` and fill in your provider credentials:
+Copy `server/.env.example` → `server/.env` and fill in your values:
 
-| Variable | Description |
-|---|---|
-| `PORT` | Port the server listens on (default `3001`) |
-| `IMAGE_API_KEY` | API key for your image generation provider |
-| `IMAGE_API_URL` | Base endpoint URL for your provider |
+| Variable | Default | Description |
+|---|---|---|
+| `PORT` | `3001` | Port the server listens on |
+| `APP_ACCESS_KEY` | _(off)_ | Optional shared secret — see [Access protection](#access-protection) below |
+| `IMAGE_RATE_LIMIT_WINDOW_MINUTES` | `60` | Rate limit window in minutes |
+| `IMAGE_RATE_LIMIT_MAX` | `5` | Max image generations per IP per window |
+| `IMAGE_API_KEY` | _(off)_ | API key for your image generation provider |
+| `IMAGE_API_URL` | _(off)_ | Endpoint URL for your provider |
 
 Provider credentials are **server-side only** — they are never sent to the browser.
 
@@ -80,18 +83,70 @@ VITE_BACKEND_URL=http://localhost:3001
 
 1. User clicks **Generate Image** on any asset card in Assets Studio.
 2. The frontend calls `POST /api/images/generate` on the backend (never the provider directly).
-3. The backend reads `IMAGE_API_KEY` / `IMAGE_API_URL` from `server/.env` and calls your image provider.
-4. The provider returns an image URL (or binary, which the server base64-encodes into a data URL).
-5. The backend forwards `{ success, imageUrl, provider, promptUsed }` to the frontend.
-6. The asset's image preview updates immediately and its status changes to `generated`.
+3. The backend validates the access key (if set) and enforces the rate limit.
+4. The backend reads `IMAGE_API_KEY` / `IMAGE_API_URL` from `server/.env` and calls your image provider.
+5. The provider returns an image URL (or binary, which the server base64-encodes into a data URL).
+6. The backend forwards `{ success, imageUrl, provider, promptUsed }` to the frontend.
+7. The asset's image preview updates immediately and its status changes to `generated`.
 
 #### Adding a real provider
 
 Open [server/services/imageGenerationService.ts](server/services/imageGenerationService.ts) and replace the `TODO` block with your provider's `fetch` call. The file contains commented-out examples for **Replicate**, **Stability AI**, and **fal.ai**.
 
+### Access protection
+
 #### Why API keys must stay in the backend
 
-Browsers have no secure secret storage. Any key placed in frontend code is visible to anyone who opens DevTools. The backend acts as a secure proxy — the browser only ever talks to `localhost:3001`, never to an external AI provider.
+Browsers have no secure secret storage. Anything in frontend code is visible to anyone who opens DevTools — including API keys. Every call to a paid image provider costs real money. If your key is in the browser, anyone can extract it and run up charges on your account.
+
+The backend is a secure proxy: the browser only ever talks to `localhost:3001` (or your hosted URL), and the actual provider credentials never leave the server process.
+
+#### Why public exposure costs money
+
+If you expose the backend URL publicly without any protection, anyone who discovers it can call `POST /api/images/generate` and consume your image generation quota. Each call to a real provider costs $0.01–$0.10 per image.
+
+Two layers of protection are built in:
+
+**1. Rate limiting** — limits how many images can be generated per IP per hour.
+
+Set in `server/.env`:
+```
+IMAGE_RATE_LIMIT_WINDOW_MINUTES=60
+IMAGE_RATE_LIMIT_MAX=5
+```
+
+Response when exceeded (HTTP 429):
+```json
+{ "success": false, "error": "Rate limit exceeded — max 5 images per 60 min per IP. Try again later." }
+```
+
+**2. Access key** — a shared secret your frontend must present with every request.
+
+Set in `server/.env`:
+```
+APP_ACCESS_KEY=some-long-random-string
+```
+
+When set, `POST /api/images/generate` requires the header `x-app-access-key: <key>`.
+
+The frontend detects this automatically via the health endpoint and shows a password input in the Assets Studio header. You enter the key once — it's saved in localStorage and sent with every generation request. Responses when missing or wrong:
+
+```json
+{ "success": false, "error": "Access key required. Set the x-app-access-key header." }  // 401
+{ "success": false, "error": "Invalid access key." }                                     // 403
+```
+
+Leave `APP_ACCESS_KEY` empty to disable access key protection (fine for local-only use).
+
+#### Error messages reference
+
+| Situation | HTTP | `error` field |
+|---|---|---|
+| Missing `prompt` | 400 | `` `prompt` is required and must be a non-empty string. `` |
+| No access key sent | 401 | `Access key required. Set the x-app-access-key header.` |
+| Wrong access key | 403 | `Invalid access key.` |
+| Rate limit hit | 429 | `Rate limit exceeded — max N images per M min per IP. Try again later.` |
+| Provider error | 500 | Provider-specific message |
 
 ---
 
