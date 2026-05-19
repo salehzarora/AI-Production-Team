@@ -127,14 +127,18 @@ function ScriptView({ o }: { o: ScriptOutput }) {
         title="Dialogue"
         copyText={o.dialogue.map((d) => `${d.speaker}: ${d.line}`).join('\n')}
       >
-        <ul className="space-y-1.5">
-          {o.dialogue.map((d, i) => (
-            <li key={i} className="flex gap-3">
-              <span className="text-accent-blue font-semibold min-w-[80px]">{d.speaker}</span>
-              <span>{d.line}</span>
-            </li>
-          ))}
-        </ul>
+        {o.dialogue.length === 0 ? (
+          <p className="text-slate-400 italic">No dialogue — visual storytelling only.</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {o.dialogue.map((d, i) => (
+              <li key={i} className="flex gap-3">
+                <span className="text-accent-blue font-semibold min-w-[80px]">{d.speaker}</span>
+                <span>{d.line}</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </Section>
       <Section title="Timing notes" copyText={o.timingNotes}>
         <p>{o.timingNotes}</p>
@@ -144,6 +148,13 @@ function ScriptView({ o }: { o: ScriptOutput }) {
 }
 
 function CharacterView({ o }: { o: CharacterOutput }) {
+  if (o.characters.length === 0) {
+    return (
+      <p className="text-sm text-slate-400 italic text-center py-8">
+        No character subjects for this project type. The visual subject (vehicle, environment, or concept) is managed in the Asset Plan.
+      </p>
+    );
+  }
   return (
     <div className="space-y-4">
       {o.characters.map((c, i) => (
@@ -289,7 +300,7 @@ function StoryboardView({ o }: { o: StoryboardOutput }) {
             <th className="py-2 pr-3">Duration</th>
             <th className="py-2 pr-3">Angle</th>
             <th className="py-2 pr-3">Action</th>
-            <th className="py-2 pr-3">Emotion</th>
+            <th className="py-2 pr-3">State</th>
             <th className="py-2 pr-3">Notes</th>
           </tr>
         </thead>

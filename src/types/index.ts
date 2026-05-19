@@ -2,6 +2,8 @@
 // Core domain types for the AI Production Team workflow.
 // =============================================================
 
+export type { IdeaType } from '../utils/ideaClassifier';
+
 export type Platform = 'YouTube Shorts' | 'TikTok' | 'Instagram Reels';
 
 export type VideoStyle =
